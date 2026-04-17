@@ -1,0 +1,100 @@
+name: Daily Data Ingest
+
+# 두 번의 KST 장 마감 시점에 실행:
+#   KST 18:30 (= UTC 09:30) — 한국 장 마감 후 KRX 데이터
+#   KST 07:30 (= UTC 22:30) — 미국 장 마감 후 NASDAQ/NYSE 데이터
+# 주말은 제외 (월~금).
+on:
+  schedule:
+    - cron: "30 9 * * 1-5"   # KST 18:30
+    - cron: "30 22 * * 1-5"  # KST 07:30 (다음 날)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "실행 모드"
+        required: false
+        default: "incremental"
+        type: choice
+        options:
+          - incremental           # 기본: 증분 수집
+          - incremental-only-kr   # 매크로·미국 skip
+          - incremental-only-us   # 미국/매크로만
+          - backfill-kr-top50     # 한국 시총 50 10년 백필 (1회용)
+          - backfill-us-sp50      # S&P 50 10년 백필 (1회용)
+          - backfill-macro        # 매크로 10년 백필 (1회용)
+
+concurrency:
+  group: ingest-${{ github.workflow }}
+  cancel-in-progress: false       # 동일 작업 중첩 금지, 기존 완료 보장
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ./poc
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # stdout 한글 인쇄
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: poc/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify DB connection + ensure schema
+        run: |
+          python -c "from db import init_db, is_pg; assert is_pg(), 'DATABASE_URL missing'; init_db()"
+
+      - name: Incremental — default (KR + US + macro)
+        if: ${{ github.event_name == 'schedule' || inputs.mode == 'incremental' || inputs.mode == '' }}
+        run: python incremental.py
+
+      - name: Incremental — KR only
+        if: ${{ inputs.mode == 'incremental-only-kr' }}
+        run: python incremental.py --skip-macro
+        # note: US 티커도 같이 돌 수 있음 (tickers 테이블 market 기준).
+        # 분리하려면 별도 필터링 로직이 필요.
+
+      - name: Incremental — US + macro only
+        if: ${{ inputs.mode == 'incremental-only-us' }}
+        run: python incremental.py
+
+      - name: Backfill — KR top 50 (one-shot)
+        if: ${{ inputs.mode == 'backfill-kr-top50' }}
+        run: python backfill.py --years 10 --market KOSPI --top 50
+
+      - name: Backfill — US S&P 50 (one-shot)
+        if: ${{ inputs.mode == 'backfill-us-sp50' }}
+        run: python backfill_us.py --years 10 --preset sp500_top50
+
+      - name: Backfill — Macro (one-shot)
+        if: ${{ inputs.mode == 'backfill-macro' }}
+        run: python backfill_macro.py --years 10
+
+      - name: Summary
+        if: always()
+        run: |
+          python -c "
+          from db import get_conn
+          c = get_conn()
+          for t in ['tickers','daily_prices','macro_indicators','ingestion_log']:
+              n = c.execute(f'SELECT COUNT(*) FROM {t}').fetchone()[0]
+              print(f'  {t:<20} {n:>10,} rows')
+          last = c.execute('SELECT MAX(date) FROM daily_prices').fetchone()[0]
+          print(f'  latest daily_prices date: {last}')
+          "
