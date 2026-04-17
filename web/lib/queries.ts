@@ -5,6 +5,7 @@ import {
   MonthlyReturn,
   MonthlyStat,
   TickerRow,
+  TickerWithMetrics,
 } from "./db";
 
 /**
@@ -157,5 +158,108 @@ export async function monthlyReturns(ticker: string): Promise<MonthlyReturn[]> {
     year: Number(r.year),
     month: Number(r.month),
     return_pct: Number(r.return_pct),
+  }));
+}
+
+/**
+ * 전 종목을 한 번에 읽어 홈 화면용 메트릭을 부착.
+ *
+ * 계산:
+ *   - currentPrice: 최신 daily_prices.close
+ *   - asOf: 최신 daily_prices.date
+ *   - thisMonthActual: 이번 달(asOf 기준) first_close → 현재 close 수익률
+ *   - thisMonthExpected: 과거 같은 달들의 평균 수익률 (이번 달은 제외)
+ *   - nextMonthExpected: (asOf 월 + 1)월의 과거 평균 수익률
+ *
+ * 비용: daily_prices 전체를 한 번 스캔 + 윈도우. Neon에서 1~3초 예상.
+ * 홈 페이지에서만 호출하고 ISR(1시간)로 캐싱 권장.
+ */
+const QUERY_TICKERS_WITH_METRICS = `
+WITH latest_per_ticker AS (
+    SELECT dp.ticker,
+           dp.close AS current_price,
+           dp.date  AS as_of
+    FROM daily_prices dp
+    INNER JOIN (
+        SELECT ticker, MAX(date) AS max_date
+        FROM daily_prices
+        GROUP BY ticker
+    ) m ON m.ticker = dp.ticker AND m.max_date = dp.date
+),
+monthly_bounds AS (
+    SELECT DISTINCT
+        ticker,
+        substr(date, 1, 7) AS ym,
+        CAST(substr(date, 6, 2) AS INTEGER) AS month,
+        FIRST_VALUE(close) OVER (
+            PARTITION BY ticker, substr(date, 1, 7) ORDER BY date ASC
+        ) AS first_close,
+        LAST_VALUE(close) OVER (
+            PARTITION BY ticker, substr(date, 1, 7) ORDER BY date ASC
+            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+        ) AS last_close
+    FROM daily_prices
+),
+monthly_pct AS (
+    SELECT ticker, ym, month,
+           (last_close - first_close) / first_close * 100.0 AS ret
+    FROM monthly_bounds
+    WHERE first_close > 0
+),
+current_month_ret AS (
+    SELECT mp.ticker, mp.ret AS this_month_actual
+    FROM monthly_pct mp
+    INNER JOIN latest_per_ticker l ON l.ticker = mp.ticker
+    WHERE mp.ym = substr(l.as_of, 1, 7)
+),
+this_month_hist AS (
+    SELECT mp.ticker, AVG(mp.ret) AS this_month_expected
+    FROM monthly_pct mp
+    INNER JOIN latest_per_ticker l ON l.ticker = mp.ticker
+    WHERE mp.month = CAST(substr(l.as_of, 6, 2) AS INTEGER)
+      AND mp.ym  <> substr(l.as_of, 1, 7)
+    GROUP BY mp.ticker
+),
+next_month_hist AS (
+    SELECT mp.ticker, AVG(mp.ret) AS next_month_expected
+    FROM monthly_pct mp
+    INNER JOIN latest_per_ticker l ON l.ticker = mp.ticker
+    WHERE mp.month = CASE
+        WHEN CAST(substr(l.as_of, 6, 2) AS INTEGER) = 12 THEN 1
+        ELSE CAST(substr(l.as_of, 6, 2) AS INTEGER) + 1
+    END
+    GROUP BY mp.ticker
+)
+SELECT
+    t.ticker, t.name, t.market,
+    lpt.current_price, lpt.as_of,
+    cmr.this_month_actual,
+    tmh.this_month_expected,
+    nmh.next_month_expected
+FROM tickers t
+LEFT JOIN latest_per_ticker lpt ON lpt.ticker = t.ticker
+LEFT JOIN current_month_ret cmr ON cmr.ticker = t.ticker
+LEFT JOIN this_month_hist  tmh ON tmh.ticker = t.ticker
+LEFT JOIN next_month_hist  nmh ON nmh.ticker = t.ticker
+ORDER BY t.ticker
+`;
+
+function numOrNull(v: unknown): number | null {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+export async function listTickersWithMetrics(): Promise<TickerWithMetrics[]> {
+  const rows = await selectAll<Record<string, unknown>>(QUERY_TICKERS_WITH_METRICS);
+  return rows.map((r) => ({
+    ticker: String(r.ticker),
+    name: String(r.name),
+    market: String(r.market),
+    currentPrice: numOrNull(r.current_price),
+    asOf: r.as_of ? String(r.as_of) : null,
+    thisMonthActual: numOrNull(r.this_month_actual),
+    thisMonthExpected: numOrNull(r.this_month_expected),
+    nextMonthExpected: numOrNull(r.next_month_expected),
   }));
 }

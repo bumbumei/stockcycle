@@ -73,3 +73,12 @@ export type MonthlyReturn = {
   year: number;
   return_pct: number;
 };
+
+/** 홈 화면용 per-ticker 종합 스냅샷. */
+export type TickerWithMetrics = TickerRow & {
+  currentPrice: number | null;
+  asOf: string | null;                 // 'YYYY-MM-DD'
+  thisMonthActual: number | null;      // % — MTD (이번 달 first_close → latest close)
+  thisMonthExpected: number | null;    // % — 과거 같은 월들의 평균 (이번 달 제외)
+  nextMonthExpected: number | null;    // % — 과거 다음 월들의 평균
+};

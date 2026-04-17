@@ -1,10 +1,12 @@
 import TickerExplorer from "@/components/TickerExplorer";
-import { listTickers } from "@/lib/queries";
+import { listTickersWithMetrics } from "@/lib/queries";
 
-export const dynamic = "force-dynamic";
+// 1시간 ISR — 데이터는 하루 2회 cron으로 갱신되므로 충분.
+// 홈 페이지 첫 요청만 Neon에 풀 쿼리를 던지고, 이후 1시간 내 요청은 캐시 서빙.
+export const revalidate = 3600;
 
 export default async function Home() {
-  const tickers = await listTickers();
+  const tickers = await listTickersWithMetrics();
 
   return (
     <div className="space-y-6">
