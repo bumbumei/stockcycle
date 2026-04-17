@@ -26,15 +26,26 @@ function marketOrder(m: string): number {
   return order[m] ?? 99;
 }
 
+function isKoreanMarket(market: string): boolean {
+  return market === "KOSPI" || market === "KOSDAQ" || market === "ETF";
+}
+
 function formatPrice(v: number | null, market: string): string {
   if (v === null) return "—";
-  // 한국 종목(코드가 숫자)은 원 단위, 그 외는 소수점 2자리
-  if (/^\d{6}$/.test(market === "ETF" || market === "KOSPI" || market === "KOSDAQ" ? "000000" : "")) {
-    return v.toLocaleString("ko-KR");
-  }
+  if (isKoreanMarket(market)) return v.toLocaleString("ko-KR");
   return v >= 100
     ? Math.round(v).toLocaleString("ko-KR")
     : v.toFixed(2);
+}
+
+function formatChangeAbs(v: number | null, market: string): string {
+  if (v === null || v === undefined || Number.isNaN(v)) return "—";
+  const sign = v > 0 ? "+" : v < 0 ? "−" : "";
+  const abs = Math.abs(v);
+  if (isKoreanMarket(market)) {
+    return `${sign}${Math.round(abs).toLocaleString("ko-KR")}`;
+  }
+  return `${sign}${abs >= 100 ? Math.round(abs).toLocaleString("ko-KR") : abs.toFixed(2)}`;
 }
 
 function pctColor(v: number | null): string {
@@ -181,15 +192,27 @@ function TickerCard({ t }: { t: TickerWithMetrics }) {
             {t.name}
           </div>
 
-          {/* 현재가 + MTD */}
+          {/* 현재가(당일 등락) + 이번달 실제 */}
           <div className="mt-2 flex items-baseline justify-between gap-2">
-            <div>
+            <div className="min-w-0">
               <span className="text-[10px] text-gray-500">현재가</span>
-              <div className="text-sm font-semibold text-gray-100 tabular-nums">
-                {formatPrice(t.currentPrice, t.market)}
+              <div className="flex items-baseline gap-1.5 flex-wrap">
+                <span className="text-sm font-semibold text-gray-100 tabular-nums">
+                  {formatPrice(t.currentPrice, t.market)}
+                </span>
+                {t.dayChangeAbs !== null && t.dayChangePct !== null && (
+                  <span
+                    className={`text-[11px] tabular-nums ${pctColor(
+                      t.dayChangePct
+                    )}`}
+                  >
+                    {formatChangeAbs(t.dayChangeAbs, t.market)} (
+                    {formatPct(t.dayChangePct, 2)})
+                  </span>
+                )}
               </div>
             </div>
-            <div className="text-right">
+            <div className="text-right shrink-0">
               <span className="text-[10px] text-gray-500">이번달 실제</span>
               <div
                 className={`text-sm font-semibold tabular-nums ${pctColor(

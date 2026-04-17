@@ -177,8 +177,9 @@ export async function monthlyReturns(ticker: string): Promise<MonthlyReturn[]> {
 const QUERY_TICKERS_WITH_METRICS = `
 WITH latest_per_ticker AS (
     SELECT dp.ticker,
-           dp.close AS current_price,
-           dp.date  AS as_of
+           dp.close       AS current_price,
+           dp.date        AS as_of,
+           dp.change_pct  AS day_change_pct
     FROM daily_prices dp
     INNER JOIN (
         SELECT ticker, MAX(date) AS max_date
@@ -233,6 +234,12 @@ next_month_hist AS (
 SELECT
     t.ticker, t.name, t.market,
     lpt.current_price, lpt.as_of,
+    lpt.day_change_pct,
+    -- 절대 등락가: price - price/(1+pct/100) = price * pct / (100+pct)
+    CASE WHEN lpt.day_change_pct IS NULL OR (100 + lpt.day_change_pct) = 0
+         THEN NULL
+         ELSE lpt.current_price * lpt.day_change_pct / (100.0 + lpt.day_change_pct)
+    END AS day_change_abs,
     cmr.this_month_actual,
     tmh.this_month_expected,
     nmh.next_month_expected
@@ -258,6 +265,8 @@ export async function listTickersWithMetrics(): Promise<TickerWithMetrics[]> {
     market: String(r.market),
     currentPrice: numOrNull(r.current_price),
     asOf: r.as_of ? String(r.as_of) : null,
+    dayChangeAbs: numOrNull(r.day_change_abs),
+    dayChangePct: numOrNull(r.day_change_pct),
     thisMonthActual: numOrNull(r.this_month_actual),
     thisMonthExpected: numOrNull(r.this_month_expected),
     nextMonthExpected: numOrNull(r.next_month_expected),

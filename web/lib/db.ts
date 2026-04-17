@@ -78,6 +78,8 @@ export type MonthlyReturn = {
 export type TickerWithMetrics = TickerRow & {
   currentPrice: number | null;
   asOf: string | null;                 // 'YYYY-MM-DD'
+  dayChangeAbs: number | null;         // 당일 등락가 (currency units)
+  dayChangePct: number | null;         // 당일 등락률 %
   thisMonthActual: number | null;      // % — MTD (이번 달 first_close → latest close)
   thisMonthExpected: number | null;    // % — 과거 같은 월들의 평균 (이번 달 제외)
   nextMonthExpected: number | null;    // % — 과거 다음 월들의 평균
