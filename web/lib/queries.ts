@@ -22,13 +22,20 @@ function paramStyle(sql: string, nParams: number): string {
   return sql; // SQLite는 ? 그대로
 }
 
+// node:sqlite의 prepared statement 형태를 얇게 타이핑 (의존성 없이).
+type SqliteStmt = {
+  all: (...p: unknown[]) => unknown[];
+  get: (...p: unknown[]) => unknown;
+};
+type SqliteLike = { prepare: (sql: string) => SqliteStmt };
+
 async function selectAll<T>(sql: string, params: unknown[] = []): Promise<T[]> {
   if (backend === "pg") {
     const r = await getPgPool().query(paramStyle(sql, params.length), params);
     return r.rows as T[];
   }
-  // Node 24 node:sqlite — 동기 API
-  return getSqliteDb().prepare(sql).all(...params) as unknown as T[];
+  const db = getSqliteDb() as SqliteLike;
+  return db.prepare(sql).all(...params) as unknown as T[];
 }
 
 async function selectOne<T>(
@@ -39,7 +46,8 @@ async function selectOne<T>(
     const r = await getPgPool().query(paramStyle(sql, params.length), params);
     return (r.rows[0] as T) ?? undefined;
   }
-  const row = getSqliteDb().prepare(sql).get(...params);
+  const db = getSqliteDb() as SqliteLike;
+  const row = db.prepare(sql).get(...params);
   return (row as T) ?? undefined;
 }
 
