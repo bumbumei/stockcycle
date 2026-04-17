@@ -19,8 +19,8 @@ from backfill_us import fetch_ohlcv_us
 from backfill_macro import incremental_macro, INDICATORS
 
 
-KR_MARKETS = {"KOSPI", "KOSDAQ"}
-US_MARKETS = {"NASDAQ", "NYSE", "US_OTHER"}
+KR_MARKETS = {"KOSPI", "KOSDAQ", "ETF"}
+US_MARKETS = {"NASDAQ", "NYSE", "US_OTHER", "PCX"}
 
 
 def get_last_date(ticker: str) -> str | None:
@@ -45,18 +45,23 @@ def get_all_tickers_with_market() -> list[tuple[str, str]]:
 
 
 def fetch_for_market(ticker: str, market: str, start_iso: str, end_iso: str):
-    """market에 따라 적절한 소스 호출. start/end는 'YYYY-MM-DD'."""
-    if market in KR_MARKETS:
-        # pykrx는 'YYYYMMDD' 포맷 사용
+    """
+    market에 따라 적절한 소스 호출. start/end는 'YYYY-MM-DD'.
+
+    KR_MARKETS → pykrx
+    그 외(미국 거래소, 알 수 없는 시장) → yfinance
+    티커가 6자리 숫자인지도 함께 검사해서 이중 안전망.
+    """
+    import re
+    is_kr_code = bool(re.match(r"^\d{6}$", ticker))
+
+    if market in KR_MARKETS or is_kr_code:
         start = start_iso.replace("-", "")
         end = end_iso.replace("-", "")
         return fetch_ohlcv_kr(ticker, start, end)
-    elif market in US_MARKETS:
-        # yfinance는 'YYYY-MM-DD' 포맷 (end는 exclusive이므로 +1일)
-        end_dt = datetime.strptime(end_iso, "%Y-%m-%d") + timedelta(days=1)
-        return fetch_ohlcv_us(ticker, start_iso, end_dt.strftime("%Y-%m-%d"))
-    else:
-        raise ValueError(f"Unknown market: {market}")
+    # 미국 / 기타 — yfinance 로 시도
+    end_dt = datetime.strptime(end_iso, "%Y-%m-%d") + timedelta(days=1)
+    return fetch_ohlcv_us(ticker, start_iso, end_dt.strftime("%Y-%m-%d"))
 
 
 def incremental_update(sleep_sec: float = 0.3) -> None:
@@ -104,6 +109,13 @@ def main() -> None:
     if not args.skip_macro:
         print("\n[INFO] 매크로 지표 증분 업데이트")
         incremental_macro(list(INDICATORS.keys()), sleep_sec=args.sleep)
+
+    # Vercel ISR 무효화 (REVALIDATE_URL/SECRET 설정 시)
+    try:
+        from process_pending import trigger_revalidate
+        trigger_revalidate()
+    except Exception as e:  # noqa: BLE001
+        print(f"[WARN] revalidate trigger 임포트 실패 — {e}")
 
 
 if __name__ == "__main__":

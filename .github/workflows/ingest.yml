@@ -36,6 +36,8 @@ jobs:
         working-directory: ./poc
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      REVALIDATE_URL: ${{ secrets.REVALIDATE_URL }}
+      REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
       # stdout 한글 인쇄
       PYTHONIOENCODING: utf-8
       PYTHONUTF8: "1"

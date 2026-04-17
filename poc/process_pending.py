@@ -17,19 +17,56 @@ pending_tickers 에 쌓인 추가 요청을 처리.
 """
 from __future__ import annotations
 
+import os
 import re
 import sys
 import time
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+from urllib.parse import urljoin
+from urllib.request import Request, urlopen
 
 from db import get_conn, init_db, is_pg
 from backfill import fetch_ohlcv as fetch_kr, save_ohlcv, log_ingestion
 from backfill_us import fetch_ohlcv_us, detect_exchange
+from pathlib import Path
 
 
 KR_RE = re.compile(r"^\d{6}$")
 US_RE = re.compile(r"^[A-Z][-.A-Z0-9]{0,9}$")
+TSV_FILE = Path(__file__).parent / "tickers_etf_kr.tsv"
+
+
+def load_tsv_names() -> dict[str, str]:
+    """tickers_etf_kr.tsv에서 코드→이름 맵. 파일 없으면 빈 dict."""
+    names: dict[str, str] = {}
+    if not TSV_FILE.exists():
+        return names
+    for line in TSV_FILE.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) >= 2:
+            names[parts[0].strip()] = parts[1].strip()
+    return names
+
+
+def resolve_kr_name(ticker: str, fallback: str | None) -> str:
+    """한국 티커 이름 해상도: 사용자 입력 → TSV → pykrx → 티커 코드."""
+    if fallback:
+        return fallback
+    tsv = load_tsv_names()
+    if ticker in tsv:
+        return tsv[ticker]
+    try:
+        from pykrx import stock
+        result = stock.get_market_ticker_name(ticker)
+        if isinstance(result, str) and result.strip():
+            return result.strip()
+    except Exception:
+        pass
+    return ticker
 
 
 def fetch_pending() -> list[tuple[str, str | None, str | None]]:
@@ -113,9 +150,11 @@ def process_one(
     # 1) 데이터 가져오기
     if is_kr:
         df = fetch_kr(ticker, start_dt.strftime("%Y%m%d"), end_dt.strftime("%Y%m%d"))
-        resolved_name = requested_name or ticker
-        # 사용자가 market_hint를 주지 않으면 KOSPI를 기본값으로
-        market = market_hint or "KOSPI"
+        # 이름: 사용자 입력 → TSV 매핑 → pykrx 조회 → 티커 코드
+        resolved_name = resolve_kr_name(ticker, requested_name)
+        # 시장: 사용자 hint → TSV에 있으면 ETF → 아니면 KOSPI
+        tsv = load_tsv_names()
+        market = market_hint or ("ETF" if ticker in tsv else "KOSPI")
     else:
         # yfinance는 end exclusive
         df = fetch_ohlcv_us(ticker, start_dt.strftime("%Y-%m-%d"),
@@ -146,6 +185,31 @@ def process_one(
     print(f"  [OK] {ticker} ({resolved_name}) — {n} rows, market={market}")
 
 
+def trigger_revalidate() -> None:
+    """Vercel 홈 페이지 ISR 즉시 무효화 (환경변수 설정 시)."""
+    url = os.environ.get("REVALIDATE_URL")
+    secret = os.environ.get("REVALIDATE_SECRET")
+    if not url or not secret:
+        print("[INFO] REVALIDATE_URL/SECRET 미설정 — 캐시 무효화 건너뜀")
+        return
+    full = urljoin(url + "/", "api/revalidate")
+    try:
+        req = Request(
+            full,
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {secret}",
+                "Content-Type": "application/json",
+            },
+            data=b'{"paths":["/"]}',
+        )
+        with urlopen(req, timeout=15) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            print(f"[OK] revalidate {resp.status}: {body[:200]}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[WARN] revalidate 실패 — {e}")
+
+
 def main() -> None:
     init_db()
     pending = fetch_pending()
@@ -169,6 +233,11 @@ def main() -> None:
         time.sleep(0.3)  # rate limit 여유
 
     print(f"[SUMMARY] ok={ok}, error={err}")
+
+    # 하나라도 성공하면 ISR 캐시 무효화
+    if ok > 0:
+        trigger_revalidate()
+
     if err > 0:
         sys.exit(1)  # Actions에서 오류 표시용
 
