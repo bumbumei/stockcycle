@@ -55,6 +55,19 @@ CREATE TABLE IF NOT EXISTS macro_indicators (
 CREATE INDEX IF NOT EXISTS idx_macro_date
     ON macro_indicators(date);
 
+CREATE TABLE IF NOT EXISTS pending_tickers (
+    ticker         TEXT PRIMARY KEY,
+    requested_name TEXT,
+    market_hint    TEXT,
+    status         TEXT    NOT NULL DEFAULT 'pending',
+    error_msg      TEXT,
+    requested_at   TEXT    NOT NULL,
+    processed_at   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_status
+    ON pending_tickers(status);
+
 CREATE TABLE IF NOT EXISTS ingestion_log (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     ticker      TEXT    NOT NULL,

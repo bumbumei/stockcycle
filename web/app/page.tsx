@@ -1,8 +1,7 @@
+import AddTickerForm from "@/components/AddTickerForm";
 import TickerExplorer from "@/components/TickerExplorer";
 import { listTickersWithMetrics } from "@/lib/queries";
 
-// 1시간 ISR — 데이터는 하루 2회 cron으로 갱신되므로 충분.
-// 홈 페이지 첫 요청만 Neon에 풀 쿼리를 던지고, 이후 1시간 내 요청은 캐시 서빙.
 export const revalidate = 3600;
 
 export default async function Home() {
@@ -18,9 +17,12 @@ export default async function Home() {
         </p>
       </section>
 
+      <AddTickerForm />
+
       {tickers.length === 0 ? (
         <div className="bg-gray-900 border border-gray-800 rounded p-4 text-gray-400 text-sm">
-          아직 등록된 종목이 없습니다. 먼저 백필을 실행하세요:
+          아직 등록된 종목이 없습니다. 위 &ldquo;종목 추가&rdquo; 버튼으로 종목을 요청하거나,
+          로컬에서 다음 명령을 실행하세요:
           <pre className="text-xs bg-gray-800 p-2 rounded mt-2 overflow-x-auto">
             python backfill.py --years 10 --tickers 005930
           </pre>

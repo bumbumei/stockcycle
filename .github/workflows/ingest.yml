@@ -60,6 +60,10 @@ jobs:
         run: |
           python -c "from db import init_db, is_pg; assert is_pg(), 'DATABASE_URL missing'; init_db()"
 
+      - name: Process pending ticker requests (queue)
+        continue-on-error: true  # pending 처리 실패가 cron 전체를 막지 않도록
+        run: python process_pending.py
+
       - name: Incremental — default (KR + US + macro)
         if: ${{ github.event_name == 'schedule' || inputs.mode == 'incremental' || inputs.mode == '' }}
         run: python incremental.py

@@ -4,6 +4,7 @@ import {
   getSqliteDb,
   MonthlyReturn,
   MonthlyStat,
+  PendingTicker,
   TickerRow,
   TickerWithMetrics,
 } from "./db";
@@ -37,6 +38,16 @@ async function selectAll<T>(sql: string, params: unknown[] = []): Promise<T[]> {
   }
   const db = getSqliteDb() as SqliteLike;
   return db.prepare(sql).all(...params) as unknown as T[];
+}
+
+async function runWrite(sql: string, params: unknown[] = []): Promise<number> {
+  if (backend === "pg") {
+    const r = await getPgPool().query(paramStyle(sql, params.length), params);
+    return r.rowCount ?? 0;
+  }
+  const db = getSqliteDb() as { prepare: (s: string) => { run: (...p: unknown[]) => { changes: number } } };
+  const res = db.prepare(sql).run(...params);
+  return res.changes ?? 0;
 }
 
 async function selectOne<T>(
@@ -255,6 +266,62 @@ function numOrNull(v: unknown): number | null {
   if (v === null || v === undefined) return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+// ── 종목 추가 요청 (pending_tickers) ────────────────────────────
+
+export async function listPending(): Promise<PendingTicker[]> {
+  const rows = await selectAll<Record<string, unknown>>(
+    `SELECT ticker, requested_name, market_hint, status, error_msg,
+            requested_at, processed_at
+     FROM pending_tickers
+     ORDER BY requested_at DESC`
+  );
+  return rows.map((r) => ({
+    ticker: String(r.ticker),
+    requestedName: r.requested_name ? String(r.requested_name) : null,
+    marketHint: r.market_hint ? String(r.market_hint) : null,
+    status: (String(r.status) as PendingTicker["status"]) || "pending",
+    errorMsg: r.error_msg ? String(r.error_msg) : null,
+    requestedAt: String(r.requested_at),
+    processedAt: r.processed_at ? String(r.processed_at) : null,
+  }));
+}
+
+export async function existsTicker(ticker: string): Promise<boolean> {
+  const row = await selectAll<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM tickers WHERE ticker = ?",
+    [ticker]
+  );
+  return Number(row[0]?.n ?? 0) > 0;
+}
+
+/** pending_tickers에 INSERT. 이미 있으면 재시도(pending으로 되돌림). */
+export async function enqueuePending(input: {
+  ticker: string;
+  requestedName?: string | null;
+  marketHint?: string | null;
+}): Promise<{ created: boolean }> {
+  const now = new Date().toISOString();
+  const changes = await runWrite(
+    `INSERT INTO pending_tickers
+       (ticker, requested_name, market_hint, status, error_msg, requested_at, processed_at)
+     VALUES (?, ?, ?, 'pending', NULL, ?, NULL)
+     ON CONFLICT(ticker) DO UPDATE SET
+         requested_name = excluded.requested_name,
+         market_hint    = excluded.market_hint,
+         status         = 'pending',
+         error_msg      = NULL,
+         requested_at   = excluded.requested_at,
+         processed_at   = NULL`,
+    [
+      input.ticker,
+      input.requestedName ?? null,
+      input.marketHint ?? null,
+      now,
+    ]
+  );
+  return { created: changes > 0 };
 }
 
 export async function listTickersWithMetrics(): Promise<TickerWithMetrics[]> {

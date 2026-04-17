@@ -74,6 +74,16 @@ export type MonthlyReturn = {
   return_pct: number;
 };
 
+export type PendingTicker = {
+  ticker: string;
+  requestedName: string | null;
+  marketHint: string | null;
+  status: "pending" | "processing" | "error";
+  errorMsg: string | null;
+  requestedAt: string;
+  processedAt: string | null;
+};
+
 /** 홈 화면용 per-ticker 종합 스냅샷. */
 export type TickerWithMetrics = TickerRow & {
   currentPrice: number | null;

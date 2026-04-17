@@ -38,6 +38,19 @@ CREATE TABLE IF NOT EXISTS macro_indicators (
 CREATE INDEX IF NOT EXISTS idx_macro_date
     ON macro_indicators(date);
 
+CREATE TABLE IF NOT EXISTS pending_tickers (
+    ticker        TEXT PRIMARY KEY,
+    requested_name TEXT,                  -- 사용자가 입력한 이름(옵션)
+    market_hint   TEXT,                   -- 'KOSPI' | 'KOSDAQ' | 'ETF' | 'NASDAQ' | 'NYSE' | NULL (자동)
+    status        TEXT NOT NULL DEFAULT 'pending',  -- 'pending' | 'processing' | 'error'
+    error_msg     TEXT,
+    requested_at  TEXT NOT NULL,
+    processed_at  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_status
+    ON pending_tickers(status);
+
 CREATE TABLE IF NOT EXISTS ingestion_log (
     id          BIGSERIAL PRIMARY KEY,
     ticker      TEXT    NOT NULL,
