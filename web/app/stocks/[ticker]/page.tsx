@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import FavoriteButton from "@/components/FavoriteButton";
 import Heatmap from "@/components/Heatmap";
 import { getTicker, monthlyReturns, monthlyStats } from "@/lib/queries";
 
@@ -35,10 +36,13 @@ export default async function StockPage({
         <Link href="/" className="hover:text-white">← 전체 종목</Link>
       </nav>
 
-      <header className="flex items-baseline justify-between">
-        <div>
-          <div className="font-mono text-gray-500 text-sm">{meta.ticker}</div>
-          <h1 className="text-2xl font-bold text-white">{meta.name}</h1>
+      <header className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <FavoriteButton ticker={meta.ticker} size="md" />
+          <div>
+            <div className="font-mono text-gray-500 text-sm">{meta.ticker}</div>
+            <h1 className="text-2xl font-bold text-white">{meta.name}</h1>
+          </div>
         </div>
         <span className="text-xs uppercase tracking-wide text-gray-400 border border-gray-700 rounded px-2 py-0.5">
           {meta.market}

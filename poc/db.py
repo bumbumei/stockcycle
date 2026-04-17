@@ -132,13 +132,17 @@ class PgConnWrapper:
     def close(self) -> None:
         self._raw.close()
 
-    # sqlite3: `with conn:` 자동 commit/rollback — psycopg3도 동일 의미
+    # sqlite3 호환 동작: `with conn:` 은 commit/rollback만 하고 연결은 유지.
+    # psycopg3 기본은 연결까지 닫으므로 수동으로 구현.
     def __enter__(self):
-        self._raw.__enter__()
         return self
 
     def __exit__(self, exc_type, exc, tb):
-        return self._raw.__exit__(exc_type, exc, tb)
+        if exc_type is None:
+            self._raw.commit()
+        else:
+            self._raw.rollback()
+        return False  # 예외 억제하지 않음
 
 
 # ─────────────────────────────────────────────────────────────

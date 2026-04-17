@@ -35,10 +35,14 @@ def upsert_ticker_meta(tickers: Iterable[str]) -> None:
     now = datetime.utcnow().isoformat(timespec="seconds")
     rows = []
     for t in tickers:
+        name: str = t  # fallback: ticker code
         try:
-            name = stock.get_market_ticker_name(t)
+            result = stock.get_market_ticker_name(t)
+            # pykrx가 실패 시 예외 대신 빈 DataFrame을 반환하는 경우가 있어 타입 체크
+            if isinstance(result, str) and result.strip():
+                name = result.strip()
         except Exception:  # noqa: BLE001
-            name = t
+            pass
         # KRX 로그인 불필요한 경로: 기본값 'KOSPI' 사용 (PoC). 운영 시 별도 메타 테이블.
         market = "KOSPI"
         rows.append((t, name, market, now))
