@@ -1,0 +1,27 @@
+name: Keepalive
+
+# GitHub은 60일간 저장소 활동이 없으면 스케줄 워크플로우를 자동 비활성화한다.
+# 매월 1일 KST 03:00 (UTC 18:00 전날)에 빈 커밋을 push해서 활동을 유지한다.
+on:
+  schedule:
+    - cron: "0 18 28 * *"   # 매월 28일 UTC 18:00 = KST 29일 03:00 (마지막 실행 ~30일 이내 보장)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Empty commit to keep schedules alive
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "chore: keepalive $(date -u +%Y-%m-%d)"
+          git push
