@@ -397,6 +397,11 @@ WHERE t.market = '${ETF_MARKET}'
 ORDER BY em.sort_order, t.ticker
 `;
 
+/** 기간 키('1W') → SQL 별칭 접미사('1w'). Postgres 가 따옴표 없는 식별자를 소문자로 접으므로 항상 소문자. */
+function periodCol(key: string): string {
+  return key.toLowerCase();
+}
+
 function shiftDays(iso: string, days: number): string {
   const d = new Date(`${iso}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() - days);
@@ -433,6 +438,8 @@ function buildEtfSnapshotQuery(base: string): { sql: string; params: unknown[] }
   const cut = (p: { days: number }) => shiftDays(base, p.days);
   const c1y = shiftDays(base, 365);
   const c3y = shiftDays(base, 1095);
+  // Postgres 는 따옴표 없는 식별자를 소문자로 접기 때문에 ('1W' → c_1w) 별칭은 처음부터 소문자로 만든다.
+  const col = (p: { key: string }) => periodCol(p.key);
 
   const sql = `
 WITH universe AS (
@@ -468,10 +475,10 @@ marks AS (
     SELECT r.ticker,
            MAX(r.date) AS d_latest${ETF_PERIODS.map(
              (p) => `,
-           MAX(CASE WHEN r.date <= ${q(cut(p))} THEN r.date END) AS d_${p.key},
-           SUM(CASE WHEN r.date > ${q(cut(p))} THEN r.ret END) AS s_${p.key},
-           SUM(CASE WHEN r.date > ${q(cut(p))} THEN r.ret * r.ret END) AS ss_${p.key},
-           COUNT(CASE WHEN r.date > ${q(cut(p))} THEN r.ret END) AS n_${p.key}`
+           MAX(CASE WHEN r.date <= ${q(cut(p))} THEN r.date END) AS d_${col(p)},
+           SUM(CASE WHEN r.date > ${q(cut(p))} THEN r.ret END) AS s_${col(p)},
+           SUM(CASE WHEN r.date > ${q(cut(p))} THEN r.ret * r.ret END) AS ss_${col(p)},
+           COUNT(CASE WHEN r.date > ${q(cut(p))} THEN r.ret END) AS n_${col(p)}`
            ).join("")},
            MIN(CASE WHEN r.date > ${q(c1y)} THEN r.close END) AS low_1y,
            MAX(CASE WHEN r.date > ${q(c1y)} THEN r.close END) AS high_1y,
@@ -486,13 +493,13 @@ SELECT u.ticker,
        l.sma50, l.sma200, l.n200,
        m.low_1y, m.high_1y, m.low_3y, m.high_3y, m.mdd_1y${ETF_PERIODS.map(
          (p) => `,
-       p_${p.key}.close AS c_${p.key}, m.s_${p.key}, m.ss_${p.key}, m.n_${p.key}`
+       p_${col(p)}.close AS c_${col(p)}, m.s_${col(p)}, m.ss_${col(p)}, m.n_${col(p)}`
        ).join("")}
 FROM universe u
 LEFT JOIN marks m ON m.ticker = u.ticker
 LEFT JOIN r l ON l.ticker = u.ticker AND l.date = m.d_latest${ETF_PERIODS.map(
   (p) => `
-LEFT JOIN daily_prices p_${p.key} ON p_${p.key}.ticker = u.ticker AND p_${p.key}.date = m.d_${p.key}`
+LEFT JOIN daily_prices p_${col(p)} ON p_${col(p)}.ticker = u.ticker AND p_${col(p)}.date = m.d_${col(p)}`
 ).join("")}
 ORDER BY u.sort_order, u.ticker
 `;
@@ -521,13 +528,14 @@ function parseSnapshot(r: Record<string, unknown>): Snapshot {
   const vol = emptyPeriodMap();
   const riskAdj = emptyPeriodMap();
   for (const p of ETF_PERIODS) {
-    const b = numOrNull(r[`c_${p.key}`]);
+    const k = periodCol(p.key); // 소문자 별칭 (Postgres 식별자 접기와 일치)
+    const b = numOrNull(r[`c_${k}`]);
     const ret = close !== null && b !== null && b > 0 ? (close / b - 1) * 100 : null;
     returns[p.key] = ret;
 
-    const n = numOrNull(r[`n_${p.key}`]) ?? 0;
-    const s = numOrNull(r[`s_${p.key}`]);
-    const ss = numOrNull(r[`ss_${p.key}`]);
+    const n = numOrNull(r[`n_${k}`]) ?? 0;
+    const s = numOrNull(r[`s_${k}`]);
+    const ss = numOrNull(r[`ss_${k}`]);
     if (n >= ETF_MIN_VOL_OBS && s !== null && ss !== null) {
       const mean = s / n;
       const variance = Math.max(0, ss / n - mean * mean);

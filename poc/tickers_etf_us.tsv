@@ -6,7 +6,6 @@ DIA	시장대표	DOW 지수	State Street	SPDR Dow Jones Industrial Average ETF T
 QQQ	시장대표	나스닥 100	Invesco	Invesco QQQ Trust, Series 1	0.002	분기	나스닥 100을 추종하는 ETF. 나스닥에 상장된 비금융 기업을 편입 FAANG을 비롯한 대형 기술주 압축 투자 성향. FAANG 비중은 45%를 상회 성장주 ETF(VUG) 대비 비용은 열위이나 유동성, 규모는 우위 Tech Giant 고성장 지속으로 세계 증시의 주도주 지위 유지될 전망
 IWM	시장대표	러셀 2000	iShares	iShares Russell 2000 ETF	0.0019	분기	미국 중소형주 대표 지수인 Russell 2000을 추종하는 ETF 미국 시가총액 1,001 ~ 3,000dnl 기업에 시총가중 방식으로 투자 S&P500 대비 1)내수비중, 2)경기민감도, 3)변동성이 높은 것이 특징 Russell 2000은 코로나 19의 충격을 가장 크게 받았고 경기 정상화 시 반등폭이 가장 높을 지수
 FEZ	시장대표	유로존	State Street	SPDR EURO STOXX 50 ETF	0.0029	분기	EuroStoxx50을 추종하며, 50개 대형주 시가총액 가중 방식으로 편입 유로존 상장기업만 편입. 비중의 2/3가 프랑스, 독일기업. 비유로존 상장기업은 투자 배제 유로화 익스포저를 헤지하지 않아 유로화 환율 변동에 노출 약달러 + 글로벌 경기 개선 조건에서 투자 매력 극대화되는 ETF
-FM	시장대표	프런티어 마켓	iShares	iShares Frontier and Select EM ETF	0.0032	반기	미국, 캐나다, 한국을 제외한 선진국 증시에 투자하는 ETF 구성종목수는 903개로 시가총액 가중방식 주식 대여 수익으로 수수료 일부를 상쇄하여 비용 절감 선진국 증시에 소액으로 분산 투자할 수 있는 ETF
 VWO	시장대표	이머징 마켓	Vanguard	Vanguard FTSE Emerging Markets ETF	0.0008	분기	자본시장에서 새로이 급성장하고 있는 국가들의 시장 국가별 비중은 중국, 대만, 인도, 브라질, 남아공 순서 종목별 비중은 텐센트, 알리바바 순으로 중국기업 비중이 높음 이머징 시장 전체수익률을 추구하고자 할때 추천
 XLF	섹터	SnP500 금융	State Street	Financial Select Sector SPDR Fund	0.001	분기	S&P500 금융섹터 기업에 시가총액 가중으로 투자 하위 산업으로 은행, 모기지 금융, 자본시장, 소비자 금융, 보험, 지주회사를 포괄 금융 ETF 중 규모, 유동성, 운용비용 측명에서 여타 ETF 압도 금융 규제 완화와 Fed 통화정책에 따른 금융 리스크 감소로 하반기 이익 회복 기대
 XLI	섹터	SnP500 산업재	State Street	Industrial Select Sector SPDR Fund	0.001	분기	S&P500 산업재 섹터 기업에 시가총액 가중으로 투자 하위 산업으로 자본재 (항공우주/방산,건설), 운송, 상업전문서비스를 포괄 산업재 ETF 내 규모, 유동성, 운용비용 측면에서 최고의 선택지이나 대형주 편중 5년간의 수주 절벽 기저효과와 맞물린 펀더멘탈 회복 기대
@@ -52,7 +51,6 @@ SLV	원자재	실버	iShares	iShares Silver Trust	0.005	반기
 URA	원자재	우라늄	Global X	Global X Uranium ETF	0.0069	반기	
 BDRY	테마	BDI 운임지수	Breakwave	Breakwave Dry Bulk Shipping ETF	0.016		
 XT	테마	글로벌 기술주	iShares	iShares Exponential Technologies ETF	0.0044	분기	
-EDOC	테마	원격 의료	Global X	Global X Telemedicine & Digital Health ETF	0.0068		
 IHI	테마	의료 기기	iShares	iShares US Medical Devices ETF	0.0039	분기	
 ARKG	테마	유전체	ARK	ARK Genomic Revolution ETF	0.005	반기	
 JETS	테마	항공기	U.S. Global	US Global Jets ETF	0.006	연	
