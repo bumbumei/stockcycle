@@ -14,6 +14,8 @@ import {
   EtfTrendRow,
   fromHigh1y,
   fromLow1y,
+  isNearHigh,
+  isNearLow,
   isoWeek,
   MacroItem,
   periodLabel,
@@ -96,6 +98,7 @@ export default function EtfTrend({ data, macro }: Props) {
   const [onlyFav, setOnlyFav] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [groupByCategory, setGroupByCategory] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
 
   const categories = useMemo(
@@ -243,6 +246,19 @@ export default function EtfTrend({ data, macro }: Props) {
           <div className="flex items-center gap-1.5">
             <button
               type="button"
+              onClick={() => setShowGuide((v) => !v)}
+              aria-expanded={showGuide}
+              className={`px-3 py-1.5 rounded border transition ${
+                showGuide
+                  ? "border-sky-600/60 bg-sky-500/10 text-sky-200"
+                  : "border-gray-700 bg-gray-900 hover:border-gray-500 hover:text-white"
+              }`}
+              title="각 지표가 무엇이고 어떻게 읽는지"
+            >
+              ⓘ 읽는 법
+            </button>
+            <button
+              type="button"
               onClick={() => copy("current")}
               disabled={ranked.length === 0}
               className="px-3 py-1.5 rounded border border-gray-700 bg-gray-900 hover:border-gray-500 hover:text-white transition disabled:opacity-40"
@@ -261,6 +277,8 @@ export default function EtfTrend({ data, macro }: Props) {
             </button>
           </div>
         </div>
+
+        {showGuide && <GuidePanel onClose={() => setShowGuide(false)} />}
       </section>
 
       {/* Top / Worst */}
@@ -404,16 +422,20 @@ export default function EtfTrend({ data, macro }: Props) {
           <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3">
             <SignalList
               title="52주 신고가 근접"
-              hint={`최근 365일 최고 종가의 ${SIGNAL_NEAR_PCT}% 이내. 돌파·추세 지속 후보`}
+              hint={`최근 365일 최고 종가에 가까운 순. ${SIGNAL_NEAR_PCT}% 이내는 강조 — 돌파·추세 지속 후보`}
               rows={signals.nearHigh}
-              metric={(r) => formatPct(fromHigh1y(r), 1)}
+              metric={(r) => `고가 ${formatPrice(r.high1y)} · ${formatPct(fromHigh1y(r), 1)}`}
+              highlight={isNearHigh}
+              highlightLabel={`${SIGNAL_NEAR_PCT}% 이내`}
               tone="up"
             />
             <SignalList
               title="52주 신저가 근접"
-              hint={`최근 365일 최저 종가의 ${SIGNAL_NEAR_PCT}% 이내. 약세 지속 또는 과매도`}
+              hint={`최근 365일 최저 종가에 가까운 순. ${SIGNAL_NEAR_PCT}% 이내는 강조 — 약세 지속 또는 과매도`}
               rows={signals.nearLow}
-              metric={(r) => `+${formatNum(fromLow1y(r), 1)}%`}
+              metric={(r) => `저가 ${formatPrice(r.low1y)} · +${formatNum(fromLow1y(r), 1)}%`}
+              highlight={isNearLow}
+              highlightLabel={`${SIGNAL_NEAR_PCT}% 이내`}
               tone="down"
             />
             <SignalList
@@ -674,15 +696,21 @@ function SignalList({
   rows,
   metric,
   tone,
+  highlight,
+  highlightLabel,
 }: {
   title: string;
   hint: string;
   rows: EtfTrendRow[];
   metric: (r: EtfTrendRow) => string;
   tone: "up" | "down" | "neutral";
+  /** 주어지면 조건을 만족하는 행만 밝게, 나머지는 흐리게 표시하고 머리글에 개수를 보여준다. */
+  highlight?: (r: EtfTrendRow) => boolean;
+  highlightLabel?: string;
 }) {
   const head =
     tone === "up" ? "text-green-300" : tone === "down" ? "text-red-300" : "text-amber-200";
+  const hits = highlight ? rows.filter(highlight).length : rows.length;
   return (
     <div className="bg-gray-900 border border-gray-800 rounded">
       <div
@@ -690,28 +718,77 @@ function SignalList({
         title={hint}
       >
         <span>{title}</span>
-        <span className="text-[10px] text-gray-500 font-normal">{rows.length}</span>
+        <span className="text-[10px] text-gray-500 font-normal">
+          {highlight ? `${highlightLabel ?? "해당"} ${hits}` : rows.length}
+        </span>
       </div>
       {rows.length === 0 ? (
         <div className="px-3 py-2 text-[11px] text-gray-600">해당 없음</div>
       ) : (
         <ul className="divide-y divide-gray-800/80">
-          {rows.map((r) => (
-            <li key={r.ticker} className="px-3 py-1 flex items-center gap-2 text-xs">
-              <Link
-                href={`/stocks/${encodeURIComponent(r.ticker)}`}
-                className="font-mono text-gray-300 hover:text-white w-12 shrink-0"
+          {rows.map((r) => {
+            const on = highlight ? highlight(r) : true;
+            return (
+              <li
+                key={r.ticker}
+                className={`px-3 py-1 flex items-center gap-2 text-xs ${on ? "" : "opacity-55"}`}
               >
-                {r.ticker}
-              </Link>
-              <span className="text-gray-200 truncate flex-1 min-w-0" title={r.name}>
-                {displayLabel(r)}
-              </span>
-              <span className="text-[11px] text-gray-400 tabular-nums shrink-0">{metric(r)}</span>
-            </li>
-          ))}
+                <Link
+                  href={`/stocks/${encodeURIComponent(r.ticker)}`}
+                  className="font-mono text-gray-300 hover:text-white w-12 shrink-0"
+                >
+                  {r.ticker}
+                </Link>
+                <span className="text-gray-200 truncate flex-1 min-w-0" title={r.name}>
+                  {displayLabel(r)}
+                </span>
+                <span className="text-[11px] text-gray-400 tabular-nums shrink-0">{metric(r)}</span>
+              </li>
+            );
+          })}
         </ul>
       )}
+    </div>
+  );
+}
+
+const GUIDE: { term: string; desc: string }[] = [
+  { term: "기간 수익률", desc: "기준일에서 N일 전(달력일) 종가 대비 최신 종가의 변화. 배당은 반영하지 않은 가격 수익률. 시트의 7/30/90/365일 수익률과 같은 방식." },
+  { term: "기준: 수익률 / 위험조정", desc: "위험조정 = 수익률 ÷ 기간 변동성(일간 수익률 표준편차 × √거래일수). 같은 수익이면 덜 흔들린 ETF가 위. 2 이상이면 꾸준한 상승, 0~1은 올랐지만 많이 출렁임, 음수는 하락. 1주는 거래일이 5일뿐이라 들쭉날쭉하니 1개월 이상에서 보기." },
+  { term: "σ (변동성)", desc: "선택 기간의 일간 수익률 표준편차를 연율화(×√252)한 %. 20% 안팎이 보통, 40% 이상이면 변동이 큰 ETF." },
+  { term: "▲▼ 순위 변동", desc: "7일 전 종가로 같은 기간 수익률을 계산해 매긴 순위와 비교. ▲3 = 세 계단 올라옴, NEW = 그때는 집계에 없던 종목. 위험조정 기준에서는 표시하지 않음." },
+  { term: "추세 배지", desc: "상승 = 종가가 200일 이동평균 위이고 50일선도 200일선 위(골든크로스 상태). 하락 = 둘 다 반대(데드크로스). 혼조 = 전환 구간." },
+  { term: "50일선比 / 200일선比", desc: "종가가 이동평균보다 얼마나 위(+)/아래(−)에 있는지 %. 200일선 위면 중기 추세가 살아 있다고 보는 게 일반적." },
+  { term: "1Y MDD", desc: "최근 1년 동안 고점에서 가장 많이 빠졌던 낙폭 %. −30%면 1년 중 어느 시점에 고점 대비 30% 하락이 있었다는 뜻." },
+  { term: "52주 고가 / 저가, 고점比 / 저점比", desc: "최근 365일 최고·최저 종가와 현재가의 거리. 고점比 −1%는 신고가 턱밑, 저점比 +3%는 신저가 근처." },
+  { term: "3년 위치", desc: "최근 3년 최저~최고 종가 범위에서 현재가가 어디쯤인지 0~100%. 시트의 '3년간 현재가 백분위'와 같은 뜻." },
+  { term: "시장 환경 타일", desc: "VIX·미 10년물·달러인덱스·WTI·원달러의 현재값과 1주·1개월 변동. VIX·금리·달러·환율은 오르면 위험자산에 부담이라 상승을 빨강으로 칠함." },
+  { term: "200일선 위 / 상승추세 비율", desc: "집계 대상 ETF 중 200일선(50일선) 위에 있는 비율과 추세 배지가 '상승'인 비율. 50% 아래면 넓게 약한 장세." },
+  { term: "분류별 평균 수익률", desc: "시장대표·섹터·테마·국가·원자재·리츠 각각의 동일가중 평균. 어느 분류로 돈이 도는지 볼 때. 분류를 누르면 그 분류만 필터." },
+  { term: "시그널", desc: "신고가·신저가 근접은 가까운 순 8개(2% 이내는 밝게). 저점 반등 = 1년 낙폭 20% 이상이었는데 1개월 플러스 전환 + 50일선 회복. 추세 전환 초기 = 50일선이 200일선을 넘었지만 3개월 수익률은 아직 음수." },
+  { term: "제외 N", desc: "최신 데이터가 기준일보다 7일 이상 오래됐거나(상장폐지·수집 실패) 해당 기간 데이터가 부족한 종목. 랭킹에서 빼고 전체 표에서는 흐리게 표시." },
+];
+
+function GuidePanel({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="bg-gray-900 border border-sky-900/60 rounded p-3 text-xs">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-sm font-semibold text-sky-200">읽는 법</h3>
+        <button type="button" onClick={onClose} className="text-gray-500 hover:text-white" aria-label="닫기">
+          ✕
+        </button>
+      </div>
+      <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+        {GUIDE.map((g) => (
+          <div key={g.term} className="grid grid-cols-[9rem,1fr] gap-2">
+            <dt className="text-gray-200 font-semibold">{g.term}</dt>
+            <dd className="text-gray-400 leading-relaxed">{g.desc}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-3 text-[11px] text-gray-500">
+        모든 값은 과거 종가로 계산한 참고 수치이며 투자 권유가 아닙니다. 표의 열 머리글에 마우스를 올리면 짧은 설명이 뜹니다.
+      </p>
     </div>
   );
 }
@@ -750,7 +827,7 @@ function FullTable({
     }));
   }, [rows, period, mode, grouped]);
 
-  const colCount = 6 + ETF_PERIODS.length + 9;
+  const colCount = 6 + ETF_PERIODS.length + 13;
 
   return (
     <div className="mt-3 overflow-x-auto border border-gray-800 rounded">
@@ -786,7 +863,10 @@ function FullTable({
               위험조정
             </th>
             <th className="px-2 py-2 text-right" title="최근 365일 고점 대비 최대 낙폭">1Y MDD</th>
-            <th className="px-2 py-2 text-right" title="최근 365일 최고 종가 대비">52주고점比</th>
+            <th className="px-2 py-2 text-right" title="최근 365일 최고 종가">52주 고가</th>
+            <th className="px-2 py-2 text-right" title="종가 ÷ 52주 고가 − 1">고점比</th>
+            <th className="px-2 py-2 text-right" title="최근 365일 최저 종가">52주 저가</th>
+            <th className="px-2 py-2 text-right" title="종가 ÷ 52주 저가 − 1">저점比</th>
             <th className="px-2 py-2 text-left" title="최근 3년 최저~최고 종가 범위 내 현재 위치">3년 위치</th>
             <th className="px-2 py-2 text-right">총보수</th>
             <th className="px-2 py-2 text-left">배당</th>
@@ -831,6 +911,7 @@ function SectionRows({
       {rows.map((r) => {
         const pos = position3y(r);
         const fromHigh = fromHigh1y(r);
+        const fromLow = fromLow1y(r);
         const t = trendOf(r);
         return (
           <tr key={r.ticker} className={`hover:bg-gray-900/60 ${r.stale ? "opacity-50" : ""}`}>
@@ -891,8 +972,13 @@ function SectionRows({
             <td className="px-2 py-1 text-right tabular-nums text-red-300/90">
               {formatPct(r.mdd1y, 1)}
             </td>
+            <td className="px-2 py-1 text-right tabular-nums text-gray-300">{formatPrice(r.high1y)}</td>
             <td className={`px-2 py-1 text-right tabular-nums ${pctColor(fromHigh)}`}>
               {formatPct(fromHigh, 1)}
+            </td>
+            <td className="px-2 py-1 text-right tabular-nums text-gray-300">{formatPrice(r.low1y)}</td>
+            <td className={`px-2 py-1 text-right tabular-nums ${pctColor(fromLow)}`}>
+              {formatPct(fromLow, 1)}
             </td>
             <td className="px-2 py-1">
               {pos === null ? (

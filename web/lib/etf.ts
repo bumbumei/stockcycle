@@ -356,8 +356,8 @@ export function categoryStats(rows: EtfTrendRow[], uncategorized = "기타"): Ca
 }
 
 export type Signals = {
-  nearHigh: EtfTrendRow[];   // 52주 고점 2% 이내
-  nearLow: EtfTrendRow[];    // 52주 저점 2% 이내
+  nearHigh: EtfTrendRow[];   // 52주 고점에 가까운 순 (2% 이내면 isNearHigh)
+  nearLow: EtfTrendRow[];    // 52주 저점에 가까운 순 (2% 이내면 isNearLow)
   rebound: EtfTrendRow[];    // 1년 MDD ≤ -20% 인데 1개월 상승 + 50일선 회복 (바닥 탈출 후보)
   crossUp: EtfTrendRow[];    // 50일선이 200일선 위로 올라선 상태이지만 3개월 수익률은 아직 음수 (초기 추세 전환)
 };
@@ -365,13 +365,29 @@ export type Signals = {
 export const SIGNAL_NEAR_PCT = 2;
 export const SIGNAL_MDD_PCT = -20;
 
+/** 52주 고점의 SIGNAL_NEAR_PCT % 이내인가. */
+export function isNearHigh(r: EtfTrendRow): boolean {
+  const v = fromHigh1y(r);
+  return v !== null && v >= -SIGNAL_NEAR_PCT;
+}
+
+/** 52주 저점의 SIGNAL_NEAR_PCT % 이내인가. */
+export function isNearLow(r: EtfTrendRow): boolean {
+  const v = fromLow1y(r);
+  return v !== null && v <= SIGNAL_NEAR_PCT;
+}
+
+/**
+ * 시그널 목록. 신고가/신저가는 임계값으로 자르지 않고 "가까운 순" 상위 limit 개를 돌려준다
+ * (어떤 날은 2% 이내가 하나도 없을 수 있어서 — 화면에서 isNearHigh/isNearLow 로 강조만 한다).
+ */
 export function signalsOf(rows: EtfTrendRow[], limit = 8): Signals {
   const live = rows.filter((r) => !r.stale && r.close !== null);
   const nearHigh = live
-    .filter((r) => (fromHigh1y(r) ?? -Infinity) >= -SIGNAL_NEAR_PCT)
+    .filter((r) => fromHigh1y(r) !== null)
     .sort((a, b) => (fromHigh1y(b) as number) - (fromHigh1y(a) as number));
   const nearLow = live
-    .filter((r) => (fromLow1y(r) ?? Infinity) <= SIGNAL_NEAR_PCT)
+    .filter((r) => fromLow1y(r) !== null)
     .sort((a, b) => (fromLow1y(a) as number) - (fromLow1y(b) as number));
   const rebound = live
     .filter(
