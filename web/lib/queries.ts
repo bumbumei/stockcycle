@@ -20,6 +20,7 @@ import {
   RANK_COMPARE_DAYS,
   emptyPeriodMap,
 } from "./etf";
+import type { DailyBar } from "./stock";
 
 /**
  * 양쪽 백엔드가 공유하는 SQL.
@@ -983,4 +984,75 @@ export async function stockDetail(ticker: string): Promise<StockDetail | undefin
     });
   }
   return { meta, returns, stats: statsFromReturns(returns) };
+}
+
+// ── 종목 상세 페이지 (야후식 요약·차트용 원천 데이터) ───────────────
+
+export type TickerWithMeta = TickerRow & {
+  etf: {
+    category: string | null;
+    label: string | null;
+    issuer: string | null;
+    expenseRatio: number | null;
+    dividendFreq: string | null;
+    description: string | null;
+  } | null;
+};
+
+/** tickers + etf_meta (미국 ETF 유니버스에 있으면) 를 한 번에. */
+export async function getTickerWithMeta(ticker: string): Promise<TickerWithMeta | undefined> {
+  const r = await selectOne<Record<string, unknown>>(
+    `SELECT t.ticker, t.name, t.market,
+            em.category, em.label, em.issuer, em.expense_ratio, em.dividend_freq, em.description
+     FROM tickers t
+     LEFT JOIN etf_meta em ON em.ticker = t.ticker
+     WHERE t.ticker = ?`,
+    [ticker]
+  );
+  if (!r) return undefined;
+  const hasMeta = r.category || r.label || r.issuer || r.expense_ratio !== null && r.expense_ratio !== undefined;
+  return {
+    ticker: String(r.ticker),
+    name: String(r.name),
+    market: String(r.market),
+    etf: hasMeta
+      ? {
+          category: r.category ? String(r.category) : null,
+          label: r.label ? String(r.label) : null,
+          issuer: r.issuer ? String(r.issuer) : null,
+          expenseRatio: numOrNull(r.expense_ratio),
+          dividendFreq: r.dividend_freq ? String(r.dividend_freq) : null,
+          description: r.description ? String(r.description) : null,
+        }
+      : null,
+  };
+}
+
+/** 종목의 전체 일봉 (날짜 오름차순). 10년 ≈ 2,500행. */
+export async function dailyBars(ticker: string): Promise<DailyBar[]> {
+  const rows = await selectAll<Record<string, unknown>>(
+    `SELECT date, open, high, low, close, volume
+     FROM daily_prices WHERE ticker = ? ORDER BY date`,
+    [ticker]
+  );
+  return rows.map((r) => ({
+    date: String(r.date),
+    open: Number(r.open),
+    high: Number(r.high),
+    low: Number(r.low),
+    close: Number(r.close),
+    volume: Number(r.volume),
+  }));
+}
+
+/** 벤치마크 등 종가만 필요한 경우 (from 이후). */
+export async function dailyCloses(
+  ticker: string,
+  from: string
+): Promise<{ date: string; close: number }[]> {
+  const rows = await selectAll<Record<string, unknown>>(
+    `SELECT date, close FROM daily_prices WHERE ticker = ? AND date >= ? ORDER BY date`,
+    [ticker, from]
+  );
+  return rows.map((r) => ({ date: String(r.date), close: Number(r.close) }));
 }
