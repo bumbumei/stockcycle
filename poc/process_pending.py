@@ -209,7 +209,7 @@ def trigger_revalidate() -> None:
                 "Authorization": f"Bearer {secret}",
                 "Content-Type": "application/json",
             },
-            data=b'{"paths":["/","/etf"]}',
+            data=b'{"paths":["/","/etf","/stocks/[ticker]"]}',
         )
         with urlopen(req, timeout=15) as resp:
             body = resp.read().decode("utf-8", errors="replace")

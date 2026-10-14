@@ -202,9 +202,15 @@ DATABASE_URL=postgresql://user:pw@host/neondb?sslmode=require
 - node-postgres는 `NUMERIC`을 string으로 반환 → `queries.ts`의 `Number(...)` 정규화가 이미 처리함.
 - 새 쿼리 추가 시 동일 패턴 적용 필요.
 
-### 한국 리전 지연이 크다
-- Neon AWS Tokyo → 한국 왕복 ~40ms, 보통 무시 가능
-- 더 낮추려면 Vercel Edge 배포 고려 (단, pg 클라이언트는 Node 런타임 필요)
+### 페이지가 느리다 (특히 종목 상세 첫 클릭)
+- 서버 함수 리전과 DB 리전이 멀면 DB 왕복마다 200ms+ 가 든다. 실측(2026-10): Vercel 기본 리전
+  iad1(미국 동부) ↔ Neon ap-southeast-1(싱가포르) 왕복 218ms, 연결 수립 1.4초.
+- `web/vercel.json` 의 `"regions": ["sin1"]` 이 서버 함수를 싱가포르에서 돌게 한다 (Hobby 플랜도 리전 1개 선택 가능).
+  Neon 프로젝트를 다른 리전에 만들었다면 그 리전 코드로 바꿀 것 (Tokyo = `hnd1`).
+- 종목 상세는 1시간 ISR 캐시 + DB 왕복 1회로 바뀌었고, `/api/stocks/<티커>/monthly?debug=1` 로 서버 처리 시간을 분해해 볼 수 있다.
+- Neon 무료 플랜은 5분 쉬면 컴퓨트가 잠들어 첫 요청이 1~3초 느리다. 서버리스에서는 `DATABASE_URL` 을
+  **pooled 엔드포인트**(호스트명에 `-pooler` 가 붙은 주소, Neon 콘솔 → Connection Details → "Pooled connection")로
+  쓰면 연결 수립이 더 빠르다.
 
 ## 7. 다음 단계
 

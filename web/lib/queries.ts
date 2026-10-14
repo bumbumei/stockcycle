@@ -897,3 +897,90 @@ export async function purgeEtf(ticker: string): Promise<void> {
     { sql: "DELETE FROM tickers WHERE ticker = ?", params: [ticker] },
   ]);
 }
+
+// ── 종목 상세 (메타 + 월별 수익률 + 월별 통계를 왕복 1회로) ──────────
+
+export type StockDetail = {
+  meta: TickerRow;
+  returns: MonthlyReturn[];
+  stats: MonthlyStat[];
+};
+
+/**
+ * tickers 1행 × 월별 수익률 N행을 한 번에 가져온다 (가격이 없으면 메타만 1행, 월별 컬럼 NULL).
+ * 월별 통계는 statsFromReturns 로 서버 코드에서 계산 → 상세 페이지가 DB 왕복 1회로 끝난다
+ * (서버리스 콜드 상태에서 "병렬 쿼리"는 연결을 하나 더 맺는 비용이 들어 오히려 느렸다).
+ */
+const QUERY_STOCK_DETAIL = `
+WITH monthly AS (
+    SELECT
+        substr(date, 1, 7) AS ym,
+        CAST(substr(date, 1, 4) AS INTEGER) AS year,
+        CAST(substr(date, 6, 2) AS INTEGER) AS month,
+        FIRST_VALUE(close) OVER (
+            PARTITION BY substr(date, 1, 7) ORDER BY date ASC
+        ) AS first_close,
+        LAST_VALUE(close) OVER (
+            PARTITION BY substr(date, 1, 7) ORDER BY date ASC
+            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+        ) AS last_close
+    FROM daily_prices
+    WHERE ticker = ?
+),
+rets AS (
+    SELECT DISTINCT ym, year, month,
+        CASE WHEN first_close > 0
+             THEN (last_close - first_close) / first_close * 100.0
+        END AS return_pct
+    FROM monthly
+)
+SELECT t.ticker, t.name, t.market,
+       r.ym, r.year, r.month, r.return_pct
+FROM tickers t
+LEFT JOIN rets r ON 1 = 1
+WHERE t.ticker = ?
+ORDER BY r.ym
+`;
+
+/** QUERY_MONTH_STATS 와 같은 정의: 월별 개수·평균·상승확률(%)·최소·최대. */
+export function statsFromReturns(returns: MonthlyReturn[]): MonthlyStat[] {
+  const byMonth = new Map<number, number[]>();
+  for (const r of returns) {
+    if (!Number.isFinite(r.return_pct)) continue;
+    byMonth.set(r.month, [...(byMonth.get(r.month) ?? []), r.return_pct]);
+  }
+  return Array.from(byMonth.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([month, xs]) => ({
+      month,
+      years_count: xs.length,
+      avg_return: xs.reduce((s, x) => s + x, 0) / xs.length,
+      up_probability: (xs.filter((x) => x > 0).length / xs.length) * 100,
+      min_return: Math.min(...xs),
+      max_return: Math.max(...xs),
+    }));
+}
+
+export async function stockDetail(ticker: string): Promise<StockDetail | undefined> {
+  const rows = await selectAll<Record<string, unknown>>(QUERY_STOCK_DETAIL, [ticker, ticker]);
+  if (rows.length === 0) return undefined;
+  const first = rows[0];
+  const meta: TickerRow = {
+    ticker: String(first.ticker),
+    name: String(first.name),
+    market: String(first.market),
+  };
+  const returns: MonthlyReturn[] = [];
+  for (const r of rows) {
+    if (r.ym === null || r.ym === undefined) continue; // 가격 없는 종목: 메타만 있는 행
+    const pct = numOrNull(r.return_pct);
+    if (pct === null) continue;
+    returns.push({
+      ym: String(r.ym),
+      year: Number(r.year),
+      month: Number(r.month),
+      return_pct: pct,
+    });
+  }
+  return { meta, returns, stats: statsFromReturns(returns) };
+}
