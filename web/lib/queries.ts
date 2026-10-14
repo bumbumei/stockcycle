@@ -8,7 +8,16 @@ import {
   TickerRow,
   TickerWithMetrics,
 } from "./db";
-import { ETF_PERIODS, EtfPeriodKey, EtfTrendData, EtfTrendRow } from "./etf";
+import {
+  ETF_PERIODS,
+  EtfTrendData,
+  EtfTrendRow,
+  MACRO_DEFS,
+  MacroItem,
+  PeriodMap,
+  RANK_COMPARE_DAYS,
+  emptyPeriodMap,
+} from "./etf";
 
 /**
  * 양쪽 백엔드가 공유하는 SQL.
@@ -325,13 +334,15 @@ export async function enqueuePending(input: {
   return { created: changes > 0 };
 }
 
-// ── 미국 ETF 트렌드 (기간별 수익률 랭킹) ─────────────────────────
+// ── 미국 ETF 트렌드 (기간별 수익률 랭킹 + 분석 지표) ────────────
 
 const ETF_MARKET = "US_ETF";
 /** 기간 시작점 탐색 시 허용하는 최대 공백(일). 이보다 오래된 종가는 쓰지 않는다. */
 const ETF_LOOKBACK_SLACK_DAYS = 45;
 /** 유니버스 기준일보다 이만큼 뒤처진 티커는 랭킹에서 제외. */
 const ETF_STALE_DAYS = 7;
+/** 변동성 계산에 필요한 최소 일간 수익률 개수. */
+const ETF_MIN_VOL_OBS = 5;
 
 const QUERY_ETF_AS_OF = `
 SELECT MAX(dp.date) AS as_of
@@ -339,59 +350,15 @@ FROM daily_prices dp
 WHERE dp.ticker IN (SELECT ticker FROM tickers WHERE market = '${ETF_MARKET}')
 `;
 
-/**
- * 티커당 1행으로 (최신 종가, 전일 종가, 기간별 시작 종가, 1년/3년 고저) 를 뽑는다.
- *
- *   1. w     : 유니버스 티커의 최근 (가장 긴 기간 + slack) 일치 종가 + LAG 로 전일 종가
- *   2. marks : 티커별 GROUP BY 한 번으로 "cutoff 이하 가장 최근 거래일" 과 1년/3년 고저를 집계
- *   3. 각 기간의 날짜로 daily_prices 를 (ticker, date) PK 로 되찾아 종가를 붙인다
- *
- * 파라미터 순서: [lower, cutoff×기간수, cutoff_1Y, cutoff_1Y, cutoff_3Y, cutoff_3Y]
- * SQLite / Postgres 양쪽에서 동일하게 동작하는 표준 SQL (window + CASE 집계 + PK 조인).
- */
-const QUERY_ETF_TREND = `
-WITH universe AS (
-    SELECT t.ticker, t.name,
-           em.category, em.label, em.issuer,
-           em.expense_ratio, em.dividend_freq, em.description,
-           em.sort_order
-    FROM tickers t
-    LEFT JOIN etf_meta em ON em.ticker = t.ticker
-    WHERE t.market = '${ETF_MARKET}'
-),
-w AS (
-    SELECT dp.ticker, dp.date, dp.close,
-           LAG(dp.close) OVER (PARTITION BY dp.ticker ORDER BY dp.date) AS prev_close
-    FROM daily_prices dp
-    WHERE dp.ticker IN (SELECT ticker FROM universe)
-      AND dp.date >= CAST(? AS TEXT)
-),
-marks AS (
-    SELECT w.ticker,
-           MAX(w.date) AS d_latest${ETF_PERIODS.map(
-             (p) =>
-               `,\n           MAX(CASE WHEN w.date <= CAST(? AS TEXT) THEN w.date END) AS d_${p.key}`
-           ).join("")},
-           MIN(CASE WHEN w.date > CAST(? AS TEXT) THEN w.close END) AS low_1y,
-           MAX(CASE WHEN w.date > CAST(? AS TEXT) THEN w.close END) AS high_1y,
-           MIN(CASE WHEN w.date > CAST(? AS TEXT) THEN w.close END) AS low_3y,
-           MAX(CASE WHEN w.date > CAST(? AS TEXT) THEN w.close END) AS high_3y
-    FROM w
-    GROUP BY w.ticker
-)
-SELECT u.ticker, u.name, u.category, u.label, u.issuer,
-       u.expense_ratio, u.dividend_freq, u.description, u.sort_order,
-       m.d_latest, l.close AS c_latest, l.prev_close,
-       m.low_1y, m.high_1y, m.low_3y, m.high_3y${ETF_PERIODS.map(
-         (p) => `,\n       p_${p.key}.close AS c_${p.key}`
-       ).join("")}
-FROM universe u
-LEFT JOIN marks m ON m.ticker = u.ticker
-LEFT JOIN w l ON l.ticker = u.ticker AND l.date = m.d_latest${ETF_PERIODS.map(
-  (p) =>
-    `\nLEFT JOIN daily_prices p_${p.key} ON p_${p.key}.ticker = u.ticker AND p_${p.key}.date = m.d_${p.key}`
-).join("")}
-ORDER BY u.sort_order, u.ticker
+const QUERY_ETF_UNIVERSE = `
+SELECT t.ticker, t.name,
+       em.category, em.label, em.issuer,
+       em.expense_ratio, em.dividend_freq, em.description,
+       em.sort_order
+FROM tickers t
+LEFT JOIN etf_meta em ON em.ticker = t.ticker
+WHERE t.market = '${ETF_MARKET}'
+ORDER BY em.sort_order, t.ticker
 `;
 
 function shiftDays(iso: string, days: number): string {
@@ -406,74 +373,275 @@ function daysBetween(a: string, b: string): number {
   return Math.round(ms / 86_400_000);
 }
 
-function emptyReturns(): Record<EtfPeriodKey, number | null> {
-  const r = {} as Record<EtfPeriodKey, number | null>;
-  for (const p of ETF_PERIODS) r[p.key] = null;
-  return r;
+/**
+ * 기준일(base) 시점의 티커당 1행 스냅샷 SQL + 파라미터.
+ *
+ *   w     : 유니버스 티커의 (가장 긴 기간 + slack) ~ base 구간 종가에
+ *           LAG(전일 종가), 50/200일 이동평균, 1년 구간 누적 고점(낙폭 계산용) 윈도우를 붙임
+ *   r     : 일간 수익률, 고점 대비 낙폭
+ *   marks : 티커별 GROUP BY 한 번으로 "cutoff 이하 가장 최근 거래일", 기간별 수익률 합/제곱합/개수
+ *           (→ 표준편차), 1년/3년 고저, 1년 최대낙폭 집계
+ *   최종  : 각 기간의 날짜로 daily_prices 를 (ticker, date) PK 로 되찾아 종가를 붙임
+ *
+ * 파라미터는 SQL 문자열에 등장하는 순서대로 push 되므로(q 헬퍼) 양쪽이 항상 맞는다.
+ * SQLite / Postgres 양쪽에서 동일하게 동작하는 표준 SQL.
+ */
+function buildEtfSnapshotQuery(base: string): { sql: string; params: unknown[] } {
+  const params: unknown[] = [];
+  const q = (v: unknown): string => {
+    params.push(v);
+    return "CAST(? AS TEXT)";
+  };
+  const maxDays = Math.max(...ETF_PERIODS.map((p) => p.days));
+  const lower = shiftDays(base, maxDays + ETF_LOOKBACK_SLACK_DAYS);
+  const cut = (p: { days: number }) => shiftDays(base, p.days);
+  const c1y = shiftDays(base, 365);
+  const c3y = shiftDays(base, 1095);
+
+  const sql = `
+WITH universe AS (
+    SELECT t.ticker, em.sort_order
+    FROM tickers t
+    LEFT JOIN etf_meta em ON em.ticker = t.ticker
+    WHERE t.market = '${ETF_MARKET}'
+),
+w AS (
+    SELECT dp.ticker, dp.date, dp.close,
+           LAG(dp.close) OVER (PARTITION BY dp.ticker ORDER BY dp.date) AS prev_close,
+           AVG(dp.close) OVER (PARTITION BY dp.ticker ORDER BY dp.date
+                               ROWS BETWEEN 49 PRECEDING AND CURRENT ROW) AS sma50,
+           AVG(dp.close) OVER (PARTITION BY dp.ticker ORDER BY dp.date
+                               ROWS BETWEEN 199 PRECEDING AND CURRENT ROW) AS sma200,
+           COUNT(dp.close) OVER (PARTITION BY dp.ticker ORDER BY dp.date
+                                 ROWS BETWEEN 199 PRECEDING AND CURRENT ROW) AS n200,
+           MAX(CASE WHEN dp.date > ${q(c1y)} THEN dp.close END)
+               OVER (PARTITION BY dp.ticker ORDER BY dp.date) AS runmax_1y
+    FROM daily_prices dp
+    WHERE dp.ticker IN (SELECT ticker FROM universe)
+      AND dp.date >= ${q(lower)}
+      AND dp.date <= ${q(base)}
+),
+r AS (
+    SELECT w.*,
+           CASE WHEN w.prev_close > 0 THEN w.close / w.prev_close - 1 END AS ret,
+           CASE WHEN w.runmax_1y > 0 THEN w.close / w.runmax_1y - 1 END AS dd_1y
+    FROM w
+),
+marks AS (
+    SELECT r.ticker,
+           MAX(r.date) AS d_latest${ETF_PERIODS.map(
+             (p) => `,
+           MAX(CASE WHEN r.date <= ${q(cut(p))} THEN r.date END) AS d_${p.key},
+           SUM(CASE WHEN r.date > ${q(cut(p))} THEN r.ret END) AS s_${p.key},
+           SUM(CASE WHEN r.date > ${q(cut(p))} THEN r.ret * r.ret END) AS ss_${p.key},
+           COUNT(CASE WHEN r.date > ${q(cut(p))} THEN r.ret END) AS n_${p.key}`
+           ).join("")},
+           MIN(CASE WHEN r.date > ${q(c1y)} THEN r.close END) AS low_1y,
+           MAX(CASE WHEN r.date > ${q(c1y)} THEN r.close END) AS high_1y,
+           MIN(CASE WHEN r.date > ${q(c3y)} THEN r.close END) AS low_3y,
+           MAX(CASE WHEN r.date > ${q(c3y)} THEN r.close END) AS high_3y,
+           MIN(CASE WHEN r.date > ${q(c1y)} THEN r.dd_1y END) AS mdd_1y
+    FROM r
+    GROUP BY r.ticker
+)
+SELECT u.ticker,
+       m.d_latest, l.close AS c_latest, l.prev_close,
+       l.sma50, l.sma200, l.n200,
+       m.low_1y, m.high_1y, m.low_3y, m.high_3y, m.mdd_1y${ETF_PERIODS.map(
+         (p) => `,
+       p_${p.key}.close AS c_${p.key}, m.s_${p.key}, m.ss_${p.key}, m.n_${p.key}`
+       ).join("")}
+FROM universe u
+LEFT JOIN marks m ON m.ticker = u.ticker
+LEFT JOIN r l ON l.ticker = u.ticker AND l.date = m.d_latest${ETF_PERIODS.map(
+  (p) => `
+LEFT JOIN daily_prices p_${p.key} ON p_${p.key}.ticker = u.ticker AND p_${p.key}.date = m.d_${p.key}`
+).join("")}
+ORDER BY u.sort_order, u.ticker
+`;
+  return { sql, params };
+}
+
+type Snapshot = {
+  asOf: string | null;
+  close: number | null;
+  prevClose: number | null;
+  sma50: number | null;
+  sma200: number | null;
+  high1y: number | null;
+  low1y: number | null;
+  high3y: number | null;
+  low3y: number | null;
+  mdd1y: number | null;
+  returns: PeriodMap;
+  vol: PeriodMap;
+  riskAdj: PeriodMap;
+};
+
+function parseSnapshot(r: Record<string, unknown>): Snapshot {
+  const close = numOrNull(r.c_latest);
+  const returns = emptyPeriodMap();
+  const vol = emptyPeriodMap();
+  const riskAdj = emptyPeriodMap();
+  for (const p of ETF_PERIODS) {
+    const b = numOrNull(r[`c_${p.key}`]);
+    const ret = close !== null && b !== null && b > 0 ? (close / b - 1) * 100 : null;
+    returns[p.key] = ret;
+
+    const n = numOrNull(r[`n_${p.key}`]) ?? 0;
+    const s = numOrNull(r[`s_${p.key}`]);
+    const ss = numOrNull(r[`ss_${p.key}`]);
+    if (n >= ETF_MIN_VOL_OBS && s !== null && ss !== null) {
+      const mean = s / n;
+      const variance = Math.max(0, ss / n - mean * mean);
+      const sd = Math.sqrt(variance);
+      vol[p.key] = sd * Math.sqrt(252) * 100;
+      const periodSd = sd * Math.sqrt(n);
+      riskAdj[p.key] = ret !== null && periodSd > 0 ? ret / 100 / periodSd : null;
+    }
+  }
+  const n200 = numOrNull(r.n200) ?? 0;
+  const mdd = numOrNull(r.mdd_1y);
+  return {
+    asOf: r.d_latest ? String(r.d_latest) : null,
+    close,
+    prevClose: numOrNull(r.prev_close),
+    sma50: n200 >= 50 ? numOrNull(r.sma50) : null,
+    sma200: n200 >= 200 ? numOrNull(r.sma200) : null,
+    high1y: numOrNull(r.high_1y),
+    low1y: numOrNull(r.low_1y),
+    high3y: numOrNull(r.high_3y),
+    low3y: numOrNull(r.low_3y),
+    mdd1y: mdd === null ? null : mdd * 100,
+    returns,
+    vol,
+    riskAdj,
+  };
+}
+
+async function fetchSnapshots(base: string): Promise<Map<string, Snapshot>> {
+  const { sql, params } = buildEtfSnapshotQuery(base);
+  const raw = await selectAll<Record<string, unknown>>(sql, params);
+  const m = new Map<string, Snapshot>();
+  for (const r of raw) m.set(String(r.ticker), parseSnapshot(r));
+  return m;
 }
 
 /**
- * 미국 ETF 유니버스(market='US_ETF') 전 종목의 기간별 수익률.
+ * 미국 ETF 유니버스(market='US_ETF') 전 종목의 기간별 수익률 + 분석 지표.
+ * 현재 스냅샷과 RANK_COMPARE_DAYS 일 전 스냅샷을 함께 조회해 순위 변동 계산용 prevReturns 를 붙인다.
  * 테이블이 아직 없거나 DB 오류 시에는 throw 하지 않고 error 필드로 돌려준다
  * (빌드 타임 프리렌더가 깨지지 않도록).
  */
 export async function etfTrend(): Promise<EtfTrendData> {
   try {
-    const asOfRow = await selectOne<{ as_of: string | null }>(QUERY_ETF_AS_OF);
+    const [universe, asOfRow] = await Promise.all([
+      selectAll<Record<string, unknown>>(QUERY_ETF_UNIVERSE),
+      selectOne<{ as_of: string | null }>(QUERY_ETF_AS_OF),
+    ]);
     const asOf = asOfRow?.as_of ? String(asOfRow.as_of) : null;
+    if (universe.length === 0) return { asOf, prevAsOf: null, count: 0, rows: [] };
 
     // 가격이 전혀 없어도 유니버스는 보여줄 수 있도록 기준일이 없으면 오늘 날짜 사용
     const base = asOf ?? new Date().toISOString().slice(0, 10);
-    const maxDays = Math.max(...ETF_PERIODS.map((p) => p.days));
-    const cutoff1y = shiftDays(base, 365);
-    const cutoff3y = shiftDays(base, 1095);
-    const params: unknown[] = [
-      shiftDays(base, maxDays + ETF_LOOKBACK_SLACK_DAYS),
-      ...ETF_PERIODS.map((p) => shiftDays(base, p.days)),
-      cutoff1y, cutoff1y, cutoff3y, cutoff3y,
-    ];
+    const prevBase = shiftDays(base, RANK_COMPARE_DAYS);
+    const [now, prev] = await Promise.all([fetchSnapshots(base), fetchSnapshots(prevBase)]);
 
-    const raw = await selectAll<Record<string, unknown>>(QUERY_ETF_TREND, params);
-
-    const rows: EtfTrendRow[] = raw.map((r) => {
-      const close = numOrNull(r.c_latest);
-      const prev = numOrNull(r.prev_close);
-      const returns = emptyReturns();
-      if (close !== null) {
-        for (const p of ETF_PERIODS) {
-          const b = numOrNull(r[`c_${p.key}`]);
-          returns[p.key] = b !== null && b > 0 ? (close / b - 1) * 100 : null;
-        }
-      }
-      const rowAsOf = r.d_latest ? String(r.d_latest) : null;
+    const rows: EtfTrendRow[] = universe.map((u) => {
+      const ticker = String(u.ticker);
+      const s = now.get(ticker);
+      const p = prev.get(ticker);
+      const close = s?.close ?? null;
+      const prevClose = s?.prevClose ?? null;
       return {
-        ticker: String(r.ticker),
-        name: String(r.name),
-        category: r.category ? String(r.category) : null,
-        label: r.label ? String(r.label) : null,
-        issuer: r.issuer ? String(r.issuer) : null,
-        expenseRatio: numOrNull(r.expense_ratio),
-        dividendFreq: r.dividend_freq ? String(r.dividend_freq) : null,
-        description: r.description ? String(r.description) : null,
-        asOf: rowAsOf,
+        ticker,
+        name: String(u.name),
+        category: u.category ? String(u.category) : null,
+        label: u.label ? String(u.label) : null,
+        issuer: u.issuer ? String(u.issuer) : null,
+        expenseRatio: numOrNull(u.expense_ratio),
+        dividendFreq: u.dividend_freq ? String(u.dividend_freq) : null,
+        description: u.description ? String(u.description) : null,
+        asOf: s?.asOf ?? null,
         close,
         dayChangePct:
-          close !== null && prev !== null && prev > 0 ? (close / prev - 1) * 100 : null,
-        high1y: numOrNull(r.high_1y),
-        low1y: numOrNull(r.low_1y),
-        high3y: numOrNull(r.high_3y),
-        low3y: numOrNull(r.low_3y),
+          close !== null && prevClose !== null && prevClose > 0 ? (close / prevClose - 1) * 100 : null,
+        high1y: s?.high1y ?? null,
+        low1y: s?.low1y ?? null,
+        high3y: s?.high3y ?? null,
+        low3y: s?.low3y ?? null,
+        sma50: s?.sma50 ?? null,
+        sma200: s?.sma200 ?? null,
+        mdd1y: s?.mdd1y ?? null,
         stale:
-          !rowAsOf || (asOf !== null && daysBetween(asOf, rowAsOf) > ETF_STALE_DAYS),
-        returns,
+          !s?.asOf || (asOf !== null && daysBetween(asOf, s.asOf) > ETF_STALE_DAYS),
+        returns: s?.returns ?? emptyPeriodMap(),
+        vol: s?.vol ?? emptyPeriodMap(),
+        riskAdj: s?.riskAdj ?? emptyPeriodMap(),
+        prevReturns: p?.returns ?? emptyPeriodMap(),
       };
     });
 
-    return { asOf, count: rows.length, rows };
+    return { asOf, prevAsOf: asOf ? prevBase : null, count: rows.length, rows };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[etfTrend] query failed:", msg);
-    return { asOf: null, count: 0, rows: [], error: msg };
+    return { asOf: null, prevAsOf: null, count: 0, rows: [], error: msg };
+  }
+}
+
+// ── 매크로 환경 (macro_indicators) ──────────────────────────────
+
+const MACRO_WINDOW_DAYS = 45;
+
+/**
+ * VIX / 미 10년물 / 달러인덱스 / WTI / 원달러의 최신 값과 1주·1개월 변동.
+ * 데이터가 없거나 오류면 빈 배열 (페이지는 해당 섹션을 숨긴다).
+ */
+export async function macroSnapshot(): Promise<MacroItem[]> {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const rows = await selectAll<Record<string, unknown>>(
+      `SELECT indicator, date, value FROM macro_indicators
+       WHERE date >= ? ORDER BY indicator, date`,
+      [shiftDays(today, MACRO_WINDOW_DAYS)]
+    );
+    const series = new Map<string, { date: string; value: number }[]>();
+    for (const r of rows) {
+      const v = numOrNull(r.value);
+      if (v === null) continue;
+      const k = String(r.indicator);
+      series.set(k, [...(series.get(k) ?? []), { date: String(r.date), value: v }]);
+    }
+    const out: MacroItem[] = [];
+    for (const def of MACRO_DEFS) {
+      const s = series.get(def.key);
+      if (!s || s.length === 0) continue;
+      const latest = s[s.length - 1];
+      const at = (daysAgo: number) => {
+        const cutoff = shiftDays(latest.date, daysAgo);
+        const cands = s.filter((x) => x.date <= cutoff);
+        return cands.length ? cands[cands.length - 1].value : null;
+      };
+      const chg = (ref: number | null) =>
+        ref === null ? null : def.kind === "pct" ? (ref > 0 ? (latest.value / ref - 1) * 100 : null) : latest.value - ref;
+      out.push({
+        key: def.key,
+        label: def.label,
+        kind: def.kind,
+        digits: def.digits,
+        unit: def.unit,
+        hint: def.hint,
+        date: latest.date,
+        value: latest.value,
+        chg1w: chg(at(7)),
+        chg1m: chg(at(30)),
+      });
+    }
+    return out;
+  } catch (e) {
+    console.error("[macroSnapshot] query failed:", e instanceof Error ? e.message : String(e));
+    return [];
   }
 }
 

@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
+  breadthOf,
   buildShareText,
+  categoryStats,
   displayLabel,
   ETF_CATEGORY_ORDER,
   ETF_PERIODS,
@@ -11,16 +13,28 @@ import {
   EtfTrendData,
   EtfTrendRow,
   fromHigh1y,
+  fromLow1y,
   isoWeek,
+  MacroItem,
   periodLabel,
   position3y,
+  prevRankMap,
+  RANK_COMPARE_DAYS,
+  RankMode,
+  rankMap,
   rankRows,
+  rankValue,
+  SIGNAL_MDD_PCT,
+  SIGNAL_NEAR_PCT,
+  signalsOf,
   topAndWorst,
+  trendOf,
+  vsSma,
 } from "@/lib/etf";
 import { useFavorites } from "@/lib/favorites";
 import FavoriteButton from "./FavoriteButton";
 
-type Props = { data: EtfTrendData };
+type Props = { data: EtfTrendData; macro: MacroItem[] };
 
 const UNCATEGORIZED = "기타";
 /** 기존 주간알람 시트와 같은 구성: 1개월 + 3개월. */
@@ -37,6 +51,11 @@ function formatPct(v: number | null, digits = 2): string {
   if (v === null || Number.isNaN(v)) return "—";
   const sign = v > 0 ? "+" : "";
   return `${sign}${v.toFixed(digits)}%`;
+}
+
+function formatNum(v: number | null, digits = 2): string {
+  if (v === null || Number.isNaN(v)) return "—";
+  return v.toFixed(digits);
 }
 
 function formatPrice(v: number | null): string {
@@ -62,9 +81,17 @@ function sortCategories(cats: Iterable<string>): string[] {
   return [...ordered, ...rest];
 }
 
-export default function EtfTrend({ data }: Props) {
+function trendClass(t: ReturnType<typeof trendOf>): string {
+  if (t === "상승") return "text-green-300 border-green-700/60 bg-green-500/10";
+  if (t === "하락") return "text-red-300 border-red-700/60 bg-red-500/10";
+  if (t === "혼조") return "text-gray-300 border-gray-700 bg-gray-800/60";
+  return "text-gray-600 border-gray-800";
+}
+
+export default function EtfTrend({ data, macro }: Props) {
   const { favorites } = useFavorites();
   const [period, setPeriod] = useState<EtfPeriodKey>("1M");
+  const [mode, setMode] = useState<RankMode>("return");
   const [category, setCategory] = useState<string>("all");
   const [onlyFav, setOnlyFav] = useState(false);
   const [showAll, setShowAll] = useState(false);
@@ -101,12 +128,25 @@ export default function EtfTrend({ data }: Props) {
     [data.rows, category, onlyFav, favorites]
   );
 
-  const { top, worst } = useMemo(() => topAndWorst(scoped, period, 10), [scoped, period]);
-  const ranked = useMemo(() => rankRows(scoped, period), [scoped, period]);
-  const excluded = useMemo(
-    () => scoped.filter((r) => r.stale || r.returns[period] === null),
-    [scoped, period]
+  const ranked = useMemo(() => rankRows(scoped, period, mode), [scoped, period, mode]);
+  const { top, worst } = useMemo(
+    () => topAndWorst(scoped, period, 10, mode),
+    [scoped, period, mode]
   );
+  const currentRank = useMemo(() => rankMap(ranked), [ranked]);
+  // 순위 변동은 수익률 기준 순위끼리만 비교 (위험조정 모드에서는 표시 안 함)
+  const previousRank = useMemo(
+    () => (mode === "return" ? prevRankMap(scoped, period) : null),
+    [scoped, period, mode]
+  );
+  const excluded = useMemo(
+    () => scoped.filter((r) => r.stale || rankValue(r, period, mode) === null),
+    [scoped, period, mode]
+  );
+
+  const breadth = useMemo(() => breadthOf(scoped), [scoped]);
+  const catStats = useMemo(() => categoryStats(scoped, UNCATEGORIZED), [scoped]);
+  const signals = useMemo(() => signalsOf(scoped), [scoped]);
 
   const copy = async (kind: "current" | "weekly") => {
     const periods = kind === "weekly" ? WEEKLY_REPORT_PERIODS : [period];
@@ -147,6 +187,15 @@ export default function EtfTrend({ data }: Props) {
               tone="amber"
             />
           ))}
+          <span className="mx-1 text-gray-700">|</span>
+          <span className="text-gray-500 mr-1">기준</span>
+          <Chip label="수익률" active={mode === "return"} onClick={() => setMode("return")} />
+          <Chip
+            label="위험조정"
+            active={mode === "riskAdj"}
+            onClick={() => setMode("riskAdj")}
+            title="수익률 ÷ 기간 변동성. 같은 수익률이면 흔들림이 적었던 ETF가 위"
+          />
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
@@ -187,6 +236,9 @@ export default function EtfTrend({ data }: Props) {
                 (제외 {excluded.length}: 데이터 지연/부족)
               </span>
             )}
+            {data.prevAsOf && mode === "return" && (
+              <span className="text-gray-500"> · ▲▼ = {data.prevAsOf} 순위 대비</span>
+            )}
           </div>
           <div className="flex items-center gap-1.5">
             <button
@@ -194,7 +246,7 @@ export default function EtfTrend({ data }: Props) {
               onClick={() => copy("current")}
               disabled={ranked.length === 0}
               className="px-3 py-1.5 rounded border border-gray-700 bg-gray-900 hover:border-gray-500 hover:text-white transition disabled:opacity-40"
-              title={`${periodLabel(period)} Top/Worst 10 텍스트 복사`}
+              title={`${periodLabel(period)} 수익률 Top/Worst 10 텍스트 복사`}
             >
               {copyLabel("current", `📋 ${periodLabel(period)} 복사`)}
             </button>
@@ -221,19 +273,166 @@ export default function EtfTrend({ data }: Props) {
       ) : (
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <RankList
-            title={`${periodLabel(period)} TOP ${top.length}`}
+            title={`${periodLabel(period)} TOP ${top.length}${mode === "riskAdj" ? " (위험조정)" : ""}`}
             rows={top}
             period={period}
+            mode={mode}
             tone="up"
+            currentRank={currentRank}
+            previousRank={previousRank}
           />
           <RankList
-            title={`${periodLabel(period)} Worst ${worst.length}`}
+            title={`${periodLabel(period)} Worst ${worst.length}${mode === "riskAdj" ? " (위험조정)" : ""}`}
             rows={worst}
             period={period}
+            mode={mode}
             tone="down"
+            currentRank={currentRank}
+            previousRank={previousRank}
           />
         </section>
       )}
+
+      {/* 분석 */}
+      <section className="space-y-4">
+        <h2 className="text-sm font-semibold text-gray-300">
+          분석{category !== "all" ? ` — ${category}` : ""}{onlyFav ? " — ★ 관심" : ""}
+        </h2>
+
+        {/* 시장 환경 + 시장 폭 */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 xl:grid-cols-8 gap-2">
+          {macro.map((m) => (
+            <MacroTile key={m.key} m={m} />
+          ))}
+          <StatTile
+            label="200일선 위"
+            value={breadth.above200 === null ? "—" : `${breadth.above200.toFixed(0)}%`}
+            sub={`50일선 위 ${breadth.above50 === null ? "—" : `${breadth.above50.toFixed(0)}%`}`}
+            tone={breadth.above200 === null ? undefined : breadth.above200 >= 50 ? "up" : "down"}
+            hint="시장 폭(breadth). 집계 대상 ETF 중 종가가 이평선보다 높은 비율. 50% 아래면 넓게 약한 장"
+          />
+          <StatTile
+            label="상승추세 비율"
+            value={breadth.uptrend === null ? "—" : `${breadth.uptrend.toFixed(0)}%`}
+            sub={`하락추세 ${breadth.downtrend === null ? "—" : `${breadth.downtrend.toFixed(0)}%`}`}
+            tone={breadth.uptrend === null ? undefined : breadth.uptrend >= 50 ? "up" : "down"}
+            hint="상승 = 종가 > 200일선 & 50일선 > 200일선 (골든크로스 상태), 하락 = 그 반대"
+          />
+          <StatTile
+            label={`평균 ${periodLabel(period)} 수익률`}
+            value={formatPct(catStats[0]?.avg[period] ?? null, 1)}
+            sub={`${breadth.n}개 동일가중`}
+            tone={
+              (catStats[0]?.avg[period] ?? null) === null
+                ? undefined
+                : (catStats[0].avg[period] as number) >= 0
+                ? "up"
+                : "down"
+            }
+            hint="집계 대상 ETF의 단순 평균 수익률"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+          {/* 분류별 평균 */}
+          <div className="lg:col-span-3 bg-gray-900 border border-gray-800 rounded overflow-x-auto">
+            <div className="px-3 py-2 border-b border-gray-800 text-xs font-semibold text-gray-300 flex items-center justify-between gap-2">
+              <span>분류별 평균 수익률 (동일가중) — 어디로 돈이 도는지</span>
+              <span className="text-[10px] text-gray-500 font-normal">분류를 누르면 필터</span>
+            </div>
+            <table className="w-full text-xs whitespace-nowrap">
+              <thead className="text-gray-500">
+                <tr>
+                  <th className="px-2 py-1.5 text-left">분류</th>
+                  <th className="px-2 py-1.5 text-right">수</th>
+                  {ETF_PERIODS.map((p) => (
+                    <th
+                      key={p.key}
+                      className={`px-2 py-1.5 text-right cursor-pointer hover:text-white ${
+                        p.key === period ? "text-amber-300" : ""
+                      }`}
+                      onClick={() => setPeriod(p.key)}
+                    >
+                      {p.label}
+                    </th>
+                  ))}
+                  <th className="px-2 py-1.5 text-right" title="분류 내 200일선 위 비율">
+                    200일선↑
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800/80">
+                {catStats.map((s) => (
+                  <tr
+                    key={s.category}
+                    className={`${s.category === "전체" ? "bg-gray-950/40 font-semibold" : "hover:bg-gray-800/40"}`}
+                  >
+                    <td className="px-2 py-1.5">
+                      {s.category === "전체" ? (
+                        <span className="text-gray-200">전체</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setCategory(category === s.category ? "all" : s.category)}
+                          className={`hover:text-white ${category === s.category ? "text-amber-300" : "text-gray-200"}`}
+                        >
+                          {s.category}
+                        </button>
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 text-right text-gray-500 tabular-nums">{s.count}</td>
+                    {ETF_PERIODS.map((p) => (
+                      <td
+                        key={p.key}
+                        className={`px-2 py-1.5 text-right tabular-nums ${pctColor(s.avg[p.key])} ${
+                          p.key === period ? "bg-amber-500/5" : ""
+                        }`}
+                      >
+                        {formatPct(s.avg[p.key], 1)}
+                      </td>
+                    ))}
+                    <td className="px-2 py-1.5 text-right tabular-nums text-gray-300">
+                      {s.above200 === null ? "—" : `${s.above200.toFixed(0)}%`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 시그널 */}
+          <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3">
+            <SignalList
+              title="52주 신고가 근접"
+              hint={`최근 365일 최고 종가의 ${SIGNAL_NEAR_PCT}% 이내. 돌파·추세 지속 후보`}
+              rows={signals.nearHigh}
+              metric={(r) => formatPct(fromHigh1y(r), 1)}
+              tone="up"
+            />
+            <SignalList
+              title="52주 신저가 근접"
+              hint={`최근 365일 최저 종가의 ${SIGNAL_NEAR_PCT}% 이내. 약세 지속 또는 과매도`}
+              rows={signals.nearLow}
+              metric={(r) => `+${formatNum(fromLow1y(r), 1)}%`}
+              tone="down"
+            />
+            <SignalList
+              title="저점 반등 (바닥 탈출 후보)"
+              hint={`1년 최대낙폭 ${SIGNAL_MDD_PCT}% 이하였는데 1개월 수익률이 플러스이고 50일선을 회복한 ETF. 1개월 수익률 순`}
+              rows={signals.rebound}
+              metric={(r) => `${formatPct(r.returns["1M"], 1)} · MDD ${formatPct(r.mdd1y, 0)}`}
+              tone="up"
+            />
+            <SignalList
+              title="추세 전환 초기"
+              hint="50일선이 200일선 위로 올라섰고 종가가 50일선 위인데 3개월 수익률은 아직 음수. 200일선 대비 순"
+              rows={signals.crossUp}
+              metric={(r) => `200일선 ${formatPct(vsSma(r.close, r.sma200), 1)}`}
+              tone="neutral"
+            />
+          </div>
+        </div>
+      </section>
 
       {/* 전체 표 */}
       <section>
@@ -244,7 +443,7 @@ export default function EtfTrend({ data }: Props) {
             className="text-sm font-semibold text-gray-300 hover:text-white flex items-center gap-2"
           >
             <span className="text-gray-500">{showAll ? "▾" : "▸"}</span>
-            전체 목록 ({scoped.length}) — 기간별 수익률 · 52주/3년 위치 · 총보수 · 배당
+            전체 목록 ({scoped.length}) — 기간별 수익률 · 추세 · 변동성 · 낙폭 · 총보수 · 배당
           </button>
           {showAll && (
             <label className="text-xs text-gray-400 flex items-center gap-1.5 cursor-pointer select-none">
@@ -262,6 +461,7 @@ export default function EtfTrend({ data }: Props) {
           <FullTable
             rows={scoped}
             period={period}
+            mode={mode}
             onPeriod={setPeriod}
             grouped={groupByCategory}
           />
@@ -271,18 +471,61 @@ export default function EtfTrend({ data }: Props) {
   );
 }
 
+function RankDelta({
+  ticker,
+  currentRank,
+  previousRank,
+}: {
+  ticker: string;
+  currentRank: Map<string, number>;
+  previousRank: Map<string, number> | null;
+}) {
+  if (!previousRank) return null;
+  const now = currentRank.get(ticker);
+  const prev = previousRank.get(ticker);
+  if (now === undefined) return null;
+  if (prev === undefined) {
+    return (
+      <span className="text-[10px] text-amber-300" title={`${RANK_COMPARE_DAYS}일 전 집계 없음`}>
+        NEW
+      </span>
+    );
+  }
+  const d = prev - now;
+  if (d === 0) {
+    return <span className="text-[10px] text-gray-600" title={`${RANK_COMPARE_DAYS}일 전 ${prev}위`}>–</span>;
+  }
+  return (
+    <span
+      className={`text-[10px] tabular-nums ${d > 0 ? "text-green-400" : "text-red-400"}`}
+      title={`${RANK_COMPARE_DAYS}일 전 ${prev}위 → 현재 ${now}위`}
+    >
+      {d > 0 ? `▲${d}` : `▼${-d}`}
+    </span>
+  );
+}
+
 function RankList({
   title,
   rows,
   period,
+  mode,
   tone,
+  currentRank,
+  previousRank,
 }: {
   title: string;
   rows: EtfTrendRow[];
   period: EtfPeriodKey;
+  mode: RankMode;
   tone: "up" | "down";
+  currentRank: Map<string, number>;
+  previousRank: Map<string, number> | null;
 }) {
-  const maxAbs = Math.max(1e-9, ...rows.map((r) => Math.abs(r.returns[period] ?? 0)));
+  const maxAbs = Math.max(
+    1e-9,
+    ...rows.map((r) => Math.abs(rankValue(r, period, mode) ?? 0))
+  );
   const bar = tone === "up" ? "bg-green-500/25" : "bg-red-500/25";
   const head = tone === "up" ? "text-green-300" : "text-red-300";
 
@@ -296,8 +539,9 @@ function RankList({
       ) : (
         <ol className="divide-y divide-gray-800/80">
           {rows.map((r, i) => {
-            const v = r.returns[period] as number;
+            const v = rankValue(r, period, mode) as number;
             const w = Math.min(100, (Math.abs(v) / maxAbs) * 100);
+            const t = trendOf(r);
             return (
               <li key={r.ticker} className="relative">
                 <div
@@ -306,9 +550,10 @@ function RankList({
                   aria-hidden
                 />
                 <div className="relative flex items-center gap-2 px-3 py-2">
-                  <span className="w-5 text-right text-[11px] text-gray-500 tabular-nums shrink-0">
-                    {i + 1}
-                  </span>
+                  <div className="w-9 shrink-0 flex flex-col items-end leading-tight">
+                    <span className="text-[11px] text-gray-500 tabular-nums">{i + 1}</span>
+                    <RankDelta ticker={r.ticker} currentRank={currentRank} previousRank={previousRank} />
+                  </div>
                   <Link
                     href={`/stocks/${encodeURIComponent(r.ticker)}`}
                     className="font-mono text-xs text-gray-300 hover:text-white w-14 shrink-0"
@@ -317,22 +562,45 @@ function RankList({
                     {r.ticker}
                   </Link>
                   <div className="min-w-0 flex-1" title={r.description ?? undefined}>
-                    <div className="text-sm text-white truncate">{displayLabel(r)}</div>
+                    <div className="text-sm text-white truncate flex items-center gap-1.5">
+                      <span className="truncate">{displayLabel(r)}</span>
+                      {t && (
+                        <span
+                          className={`text-[9px] px-1 rounded border shrink-0 ${trendClass(t)}`}
+                          title="50/200일 이동평균 기준 추세"
+                        >
+                          {t}
+                        </span>
+                      )}
+                    </div>
                     <div className="text-[10px] text-gray-500 truncate">
                       {r.category ? `${r.category} · ` : ""}
                       {r.name}
                     </div>
                   </div>
                   <div className="text-right shrink-0">
-                    <div className={`text-sm font-semibold tabular-nums ${pctColor(v)}`}>
-                      {formatPct(v)}
-                    </div>
-                    <div className="text-[10px] text-gray-500 tabular-nums">
-                      {formatPrice(r.close)}{" "}
-                      <span className={pctColor(r.dayChangePct)}>
-                        {formatPct(r.dayChangePct)}
-                      </span>
-                    </div>
+                    {mode === "riskAdj" ? (
+                      <>
+                        <div className={`text-sm font-semibold tabular-nums ${pctColor(v)}`}>
+                          {formatNum(v, 2)}
+                        </div>
+                        <div className="text-[10px] text-gray-500 tabular-nums">
+                          <span className={pctColor(r.returns[period])}>{formatPct(r.returns[period], 1)}</span>
+                          {" · σ "}
+                          {formatNum(r.vol[period], 0)}%
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className={`text-sm font-semibold tabular-nums ${pctColor(v)}`}>
+                          {formatPct(v)}
+                        </div>
+                        <div className="text-[10px] text-gray-500 tabular-nums">
+                          {formatPrice(r.close)}{" "}
+                          <span className={pctColor(r.dayChangePct)}>{formatPct(r.dayChangePct)}</span>
+                        </div>
+                      </>
+                    )}
                   </div>
                   <FavoriteButton ticker={r.ticker} />
                 </div>
@@ -345,25 +613,131 @@ function RankList({
   );
 }
 
+function MacroTile({ m }: { m: MacroItem }) {
+  const fmtChg = (v: number | null) => {
+    if (v === null) return "—";
+    const sign = v > 0 ? "+" : "";
+    return m.kind === "pct" ? `${sign}${v.toFixed(1)}%` : `${sign}${v.toFixed(2)}%p`;
+  };
+  // VIX·금리·달러·환율은 오르면 위험자산에 부담 → 색을 반대로
+  const inverse = m.key === "VIX" || m.key === "US10Y" || m.key === "DXY" || m.key === "USDKRW";
+  const color = (v: number | null) => {
+    if (v === null) return "text-gray-500";
+    const up = inverse ? v < 0 : v > 0;
+    return v === 0 ? "text-gray-300" : up ? "text-green-400" : "text-red-400";
+  };
+  return (
+    <div
+      className="bg-gray-900 border border-gray-800 rounded px-2.5 py-2"
+      title={`${m.hint ? m.hint + " · " : ""}${m.date} 기준`}
+    >
+      <div className="text-[10px] text-gray-500 leading-tight">{m.label}</div>
+      <div className="text-base font-bold text-white tabular-nums leading-tight mt-0.5">
+        {m.unit === "$" ? "$" : ""}
+        {m.value.toFixed(m.digits)}
+        {m.unit && m.unit !== "$" ? m.unit : ""}
+      </div>
+      <div className="text-[10px] tabular-nums mt-0.5 flex gap-2">
+        <span className={color(m.chg1w)} title="1주 전 대비">1W {fmtChg(m.chg1w)}</span>
+        <span className={color(m.chg1m)} title="1개월 전 대비">1M {fmtChg(m.chg1m)}</span>
+      </div>
+    </div>
+  );
+}
+
+function StatTile({
+  label,
+  value,
+  sub,
+  tone,
+  hint,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  tone?: "up" | "down";
+  hint?: string;
+}) {
+  const color = tone === "up" ? "text-green-400" : tone === "down" ? "text-red-400" : "text-white";
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded px-2.5 py-2" title={hint}>
+      <div className="text-[10px] text-gray-500 leading-tight">{label}</div>
+      <div className={`text-base font-bold tabular-nums leading-tight mt-0.5 ${color}`}>{value}</div>
+      {sub && <div className="text-[10px] text-gray-500 tabular-nums mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+function SignalList({
+  title,
+  hint,
+  rows,
+  metric,
+  tone,
+}: {
+  title: string;
+  hint: string;
+  rows: EtfTrendRow[];
+  metric: (r: EtfTrendRow) => string;
+  tone: "up" | "down" | "neutral";
+}) {
+  const head =
+    tone === "up" ? "text-green-300" : tone === "down" ? "text-red-300" : "text-amber-200";
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded">
+      <div
+        className={`px-3 py-1.5 border-b border-gray-800 text-xs font-semibold flex items-center justify-between ${head}`}
+        title={hint}
+      >
+        <span>{title}</span>
+        <span className="text-[10px] text-gray-500 font-normal">{rows.length}</span>
+      </div>
+      {rows.length === 0 ? (
+        <div className="px-3 py-2 text-[11px] text-gray-600">해당 없음</div>
+      ) : (
+        <ul className="divide-y divide-gray-800/80">
+          {rows.map((r) => (
+            <li key={r.ticker} className="px-3 py-1 flex items-center gap-2 text-xs">
+              <Link
+                href={`/stocks/${encodeURIComponent(r.ticker)}`}
+                className="font-mono text-gray-300 hover:text-white w-12 shrink-0"
+              >
+                {r.ticker}
+              </Link>
+              <span className="text-gray-200 truncate flex-1 min-w-0" title={r.name}>
+                {displayLabel(r)}
+              </span>
+              <span className="text-[11px] text-gray-400 tabular-nums shrink-0">{metric(r)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function FullTable({
   rows,
   period,
+  mode,
   onPeriod,
   grouped,
 }: {
   rows: EtfTrendRow[];
   period: EtfPeriodKey;
+  mode: RankMode;
   onPeriod: (p: EtfPeriodKey) => void;
   grouped: boolean;
 }) {
-  const sortByPeriod = (list: EtfTrendRow[]) => {
-    const withVal = list.filter((r) => !r.stale && r.returns[period] !== null);
-    const without = list.filter((r) => r.stale || r.returns[period] === null);
-    withVal.sort((a, b) => (b.returns[period] as number) - (a.returns[period] as number));
-    return [...withVal, ...without];
-  };
-
   const sections = useMemo(() => {
+    const sortByPeriod = (list: EtfTrendRow[]) => {
+      const withVal = list.filter((r) => !r.stale && rankValue(r, period, mode) !== null);
+      const without = list.filter((r) => r.stale || rankValue(r, period, mode) === null);
+      withVal.sort(
+        (a, b) => (rankValue(b, period, mode) as number) - (rankValue(a, period, mode) as number)
+      );
+      return [...withVal, ...without];
+    };
     if (!grouped) return [{ title: null as string | null, rows: sortByPeriod(rows) }];
     const byCat = new Map<string, EtfTrendRow[]>();
     for (const r of rows) {
@@ -374,10 +748,9 @@ function FullTable({
       title: c,
       rows: sortByPeriod(byCat.get(c) ?? []),
     }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, period, grouped]);
+  }, [rows, period, mode, grouped]);
 
-  const colCount = 7 + ETF_PERIODS.length + 4;
+  const colCount = 6 + ETF_PERIODS.length + 9;
 
   return (
     <div className="mt-3 overflow-x-auto border border-gray-800 rounded">
@@ -403,12 +776,18 @@ function FullTable({
                 {p.key === period ? " ▾" : ""}
               </th>
             ))}
-            <th className="px-2 py-2 text-right" title="최근 365일 최고 종가 대비">
-              52주고점比
+            <th className="px-2 py-2 text-left" title="50/200일 이동평균 기준">추세</th>
+            <th className="px-2 py-2 text-right" title="종가 ÷ 50일 이동평균 − 1">50일선比</th>
+            <th className="px-2 py-2 text-right" title="종가 ÷ 200일 이동평균 − 1">200일선比</th>
+            <th className="px-2 py-2 text-right" title={`${periodLabel(period)} 구간 일간 수익률 표준편차 × √252`}>
+              σ {periodLabel(period)}
             </th>
-            <th className="px-2 py-2 text-left" title="최근 3년 최저~최고 종가 범위 내 현재 위치">
-              3년 위치
+            <th className="px-2 py-2 text-right" title={`${periodLabel(period)} 수익률 ÷ 기간 변동성`}>
+              위험조정
             </th>
+            <th className="px-2 py-2 text-right" title="최근 365일 고점 대비 최대 낙폭">1Y MDD</th>
+            <th className="px-2 py-2 text-right" title="최근 365일 최고 종가 대비">52주고점比</th>
+            <th className="px-2 py-2 text-left" title="최근 3년 최저~최고 종가 범위 내 현재 위치">3년 위치</th>
             <th className="px-2 py-2 text-right">총보수</th>
             <th className="px-2 py-2 text-left">배당</th>
           </tr>
@@ -452,6 +831,7 @@ function SectionRows({
       {rows.map((r) => {
         const pos = position3y(r);
         const fromHigh = fromHigh1y(r);
+        const t = trendOf(r);
         return (
           <tr key={r.ticker} className={`hover:bg-gray-900/60 ${r.stale ? "opacity-50" : ""}`}>
             <td className="px-1 py-1">
@@ -489,6 +869,28 @@ function SectionRows({
                 {formatPct(r.returns[p.key], 1)}
               </td>
             ))}
+            <td className="px-2 py-1">
+              {t ? (
+                <span className={`text-[10px] px-1 rounded border ${trendClass(t)}`}>{t}</span>
+              ) : (
+                <span className="text-gray-600">—</span>
+              )}
+            </td>
+            <td className={`px-2 py-1 text-right tabular-nums ${pctColor(vsSma(r.close, r.sma50))}`}>
+              {formatPct(vsSma(r.close, r.sma50), 1)}
+            </td>
+            <td className={`px-2 py-1 text-right tabular-nums ${pctColor(vsSma(r.close, r.sma200))}`}>
+              {formatPct(vsSma(r.close, r.sma200), 1)}
+            </td>
+            <td className="px-2 py-1 text-right tabular-nums text-gray-300">
+              {r.vol[period] === null ? "—" : `${formatNum(r.vol[period], 0)}%`}
+            </td>
+            <td className={`px-2 py-1 text-right tabular-nums ${pctColor(r.riskAdj[period])}`}>
+              {formatNum(r.riskAdj[period], 2)}
+            </td>
+            <td className="px-2 py-1 text-right tabular-nums text-red-300/90">
+              {formatPct(r.mdd1y, 1)}
+            </td>
             <td className={`px-2 py-1 text-right tabular-nums ${pctColor(fromHigh)}`}>
               {formatPct(fromHigh, 1)}
             </td>
@@ -496,7 +898,10 @@ function SectionRows({
               {pos === null ? (
                 <span className="text-gray-600">—</span>
               ) : (
-                <div className="flex items-center gap-1.5" title={`3년 저점 ${formatPrice(r.low3y)} ~ 고점 ${formatPrice(r.high3y)}`}>
+                <div
+                  className="flex items-center gap-1.5"
+                  title={`3년 저점 ${formatPrice(r.low3y)} ~ 고점 ${formatPrice(r.high3y)}`}
+                >
                   <div className="relative h-1.5 w-16 rounded bg-gray-800">
                     <div
                       className="absolute inset-y-0 left-0 rounded bg-amber-500/60"
@@ -525,11 +930,13 @@ function Chip({
   active,
   onClick,
   tone = "gray",
+  title,
 }: {
   label: string;
   active: boolean;
   onClick: () => void;
   tone?: "gray" | "amber" | "yellow";
+  title?: string;
 }) {
   const activeCls =
     tone === "amber"
@@ -542,6 +949,7 @@ function Chip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
+      title={title}
       className={`px-2.5 py-1 rounded border transition ${
         active
           ? activeCls
