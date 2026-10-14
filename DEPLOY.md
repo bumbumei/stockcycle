@@ -76,6 +76,9 @@ gh repo create stockcycle --public --source=. --push
    DATABASE_URL = postgresql://user:pw@host/neondb?sslmode=require
    ADMIN_SECRET = <긴 임의 문자열>   # /etf/manage ETF 목록 편집기의 관리자 키 (없으면 REVALIDATE_SECRET 사용)
    ```
+   - `ADMIN_SECRET` 은 한글 등 어떤 문자든 가능 (브라우저가 URL 인코딩해 보내고 서버가 복원).
+     단 `REVALIDATE_SECRET` 은 GitHub Actions(Python)가 헤더에 그대로 넣으므로 영문·숫자만 사용.
+   - 환경변수를 추가·변경한 뒤에는 **Redeploy** 해야 반영된다.
 5. "Deploy" 클릭 → 약 1~2분 후 `https://<proj>.vercel.app` 배포 완료
 
 ### 2-3) 동작 확인
