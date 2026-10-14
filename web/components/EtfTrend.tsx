@@ -571,19 +571,18 @@ function RankList({
                   style={{ width: `${w}%` }}
                   aria-hidden
                 />
-                <div className="relative flex items-center gap-2 px-3 py-2">
+                <div className="relative flex items-center gap-1 pr-1">
+                <Link
+                  href={`/stocks/${encodeURIComponent(r.ticker)}`}
+                  className="flex-1 min-w-0 flex items-center gap-2 pl-3 pr-1 py-2 rounded hover:bg-white/5 transition"
+                  title={`${r.ticker} 월별 패턴 보기${r.description ? ` · ${r.description}` : ""}`}
+                >
                   <div className="w-9 shrink-0 flex flex-col items-end leading-tight">
                     <span className="text-[11px] text-gray-500 tabular-nums">{i + 1}</span>
                     <RankDelta ticker={r.ticker} currentRank={currentRank} previousRank={previousRank} />
                   </div>
-                  <Link
-                    href={`/stocks/${encodeURIComponent(r.ticker)}`}
-                    className="font-mono text-xs text-gray-300 hover:text-white w-14 shrink-0"
-                    title="월별 패턴 보기"
-                  >
-                    {r.ticker}
-                  </Link>
-                  <div className="min-w-0 flex-1" title={r.description ?? undefined}>
+                  <span className="font-mono text-xs text-gray-300 w-14 shrink-0">{r.ticker}</span>
+                  <div className="min-w-0 flex-1">
                     <div className="text-sm text-white truncate flex items-center gap-1.5">
                       <span className="truncate">{displayLabel(r)}</span>
                       {t && (
@@ -624,6 +623,7 @@ function RankList({
                       </>
                     )}
                   </div>
+                </Link>
                   <FavoriteButton ticker={r.ticker} />
                 </div>
               </li>
@@ -735,13 +735,12 @@ function SignalList({
               >
                 <Link
                   href={`/stocks/${encodeURIComponent(r.ticker)}`}
-                  className="font-mono text-gray-300 hover:text-white w-12 shrink-0"
+                  className="flex-1 min-w-0 flex items-center gap-2 hover:text-white"
+                  title={`${r.name} · 월별 패턴 보기`}
                 >
-                  {r.ticker}
+                  <span className="font-mono text-gray-300 w-12 shrink-0">{r.ticker}</span>
+                  <span className="text-gray-200 truncate flex-1 min-w-0">{displayLabel(r)}</span>
                 </Link>
-                <span className="text-gray-200 truncate flex-1 min-w-0" title={r.name}>
-                  {displayLabel(r)}
-                </span>
                 <span className="text-[11px] text-gray-400 tabular-nums shrink-0">{metric(r)}</span>
               </li>
             );
@@ -924,14 +923,20 @@ function SectionRows({
               </Link>
             </td>
             <td className="px-2 py-1 min-w-[10rem]" title={r.description ?? undefined}>
-              <div className="text-white">
-                {displayLabel(r)}
-                {r.description && <span className="ml-1 text-gray-500" aria-hidden>ⓘ</span>}
-              </div>
-              <div className="text-[10px] text-gray-500 truncate max-w-[16rem]">
-                {r.name}
-                {r.stale && r.asOf ? ` · ${r.asOf} 까지` : ""}
-              </div>
+              <Link
+                href={`/stocks/${encodeURIComponent(r.ticker)}`}
+                className="block hover:underline decoration-gray-600"
+                title={`${r.ticker} 월별 패턴 보기`}
+              >
+                <div className="text-white">
+                  {displayLabel(r)}
+                  {r.description && <span className="ml-1 text-gray-500" aria-hidden>ⓘ</span>}
+                </div>
+                <div className="text-[10px] text-gray-500 truncate max-w-[16rem]">
+                  {r.name}
+                  {r.stale && r.asOf ? ` · ${r.asOf} 까지` : ""}
+                </div>
+              </Link>
             </td>
             <td className="px-2 py-1 text-gray-400">{r.category ?? "—"}</td>
             <td className="px-2 py-1 text-right text-gray-300 tabular-nums">
