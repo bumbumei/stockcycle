@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
 import pandas as pd
@@ -80,11 +80,18 @@ def upsert_us_ticker_meta(tickers: list[str]) -> None:
 def fetch_ohlcv_us(ticker: str, start: str, end: str) -> pd.DataFrame:
     """
     yfinance에서 OHLCV 조회 → pykrx 스키마와 동일한 컬럼으로 변환.
-    start/end: 'YYYY-MM-DD'
+    start/end: 'YYYY-MM-DD' (end 는 yfinance 규칙대로 exclusive)
+
+    change_pct(전일 대비 %)를 구간 첫 행에서도 계산할 수 있도록 start 보다
+    열흘 앞서 받아 pct_change 를 구한 뒤 start 이전 행은 버린다.
+    (증분 수집은 보통 1~2행만 받으므로, 이 처리가 없으면 전일 대비가 항상 NULL 이 된다.)
     """
+    fetch_start = (
+        datetime.strptime(start, "%Y-%m-%d") - timedelta(days=10)
+    ).strftime("%Y-%m-%d")
     df = yf.download(
         ticker,
-        start=start,
+        start=fetch_start,
         end=end,
         auto_adjust=False,   # 원본 종가 유지 (splits/div은 별도 관리)
         progress=False,
@@ -104,10 +111,13 @@ def fetch_ohlcv_us(ticker: str, start: str, end: str) -> pd.DataFrame:
         "Close": "close",
         "Volume": "volume",
     })
-    # 등락률 계산
+    # 등락률 계산 (앞당겨 받은 구간 포함) → start 이전 행 제거
     df["change_pct"] = df["close"].pct_change() * 100.0
     df.index = df.index.strftime("%Y-%m-%d")
     df.index.name = "date"
+    df = df[df.index >= start]
+    if df.empty:
+        return df
     return df[["open", "high", "low", "close", "volume", "change_pct"]]
 
 

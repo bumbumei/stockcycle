@@ -69,6 +69,15 @@ python backfill_us.py --years 10 --preset ai
 > rate limit 회피를 위해 `--sleep` 간격 적용 (기본 0.2~0.3초).
 > 한국/미국 데이터는 동일한 `daily_prices` 테이블에 저장되며 `tickers.market` 으로 구분.
 
+**E. 미국 ETF 유니버스 (ETF 트렌드 뷰어용):**
+```bash
+python seed_etf_us.py                 # tickers_etf_us.tsv → tickers(market=US_ETF) + etf_meta, 누락 티커만 백필
+python seed_etf_us.py --meta-only     # 분류/라벨/수수료/배당기준/설명만 동기화
+python seed_etf_us.py --force         # 전체 재백필
+```
+`tickers_etf_us.tsv`(티커/분류/한글 라벨/운용사/이름/수수료/배당기준/설명)를 편집한 뒤
+다시 실행하면 반영된다. GitHub Actions 에서는 `Daily Data Ingest` → `seed-etf-us` 모드.
+
 ### 2-1) 매크로 지표 백필
 
 ```bash
@@ -190,8 +199,8 @@ python incremental.py --skip-macro
 ```
 
 `incremental.py`는 `tickers.market` 컬럼을 기준으로 자동 라우팅:
-- `KOSPI`/`KOSDAQ` → pykrx
-- `NASDAQ`/`NYSE`/`US_OTHER` → yfinance
+- `KOSPI`/`KOSDAQ`/`ETF`(한국) → pykrx
+- `NASDAQ`/`NYSE`/`US_ETF`/`US_OTHER` → yfinance
 - + 매크로 지표 (USDKRW/VIX/US10Y/DXY/WTI) 동시 갱신
 
 한/미 주식을 섞어 등록해 두어도 한 번의 실행으로 모두 업데이트됩니다.

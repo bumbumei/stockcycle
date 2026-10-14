@@ -68,6 +68,20 @@ CREATE TABLE IF NOT EXISTS pending_tickers (
 CREATE INDEX IF NOT EXISTS idx_pending_status
     ON pending_tickers(status);
 
+CREATE TABLE IF NOT EXISTS etf_meta (
+    ticker      TEXT PRIMARY KEY,
+    category    TEXT,
+    label       TEXT,
+    issuer      TEXT,
+    expense_ratio REAL,
+    dividend_freq TEXT,
+    description TEXT,
+    sort_order  INTEGER,
+    hidden      INTEGER NOT NULL DEFAULT 0,
+    updated_at  TEXT    NOT NULL,
+    FOREIGN KEY (ticker) REFERENCES tickers(ticker)
+);
+
 CREATE TABLE IF NOT EXISTS ingestion_log (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     ticker      TEXT    NOT NULL,
@@ -175,18 +189,38 @@ def get_conn():
     return conn
 
 
+# 기존 테이블에 나중에 추가된 컬럼. (table, column, DDL type+default) — 멱등하게 적용.
+MIGRATIONS: list[tuple[str, str, str]] = [
+    ("etf_meta", "hidden", "INTEGER NOT NULL DEFAULT 0"),
+]
+
+
+def _apply_migrations(conn) -> None:
+    for table, column, decl in MIGRATIONS:
+        if is_pg():
+            conn.execute(
+                f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {decl}"
+            )
+        else:
+            cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+            if column not in cols:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+
+
 def init_db() -> None:
-    """스키마 초기화. 백엔드에 맞는 DDL을 실행."""
+    """스키마 초기화. 백엔드에 맞는 DDL을 실행하고, 누락 컬럼을 보강."""
     conn = get_conn()
     try:
         if is_pg():
             ddl = SCHEMA_PG_FILE.read_text(encoding="utf-8")
             conn.executescript(ddl)
+            _apply_migrations(conn)
             target = os.environ["DATABASE_URL"].split("@")[-1]
             conn.commit()
             print(f"[OK] Postgres 스키마 초기화 완료 → {target}")
         else:
             conn.executescript(SCHEMA)
+            _apply_migrations(conn)
             conn.commit()
             print(f"[OK] SQLite 스키마 초기화 완료: {DB_PATH}")
     finally:

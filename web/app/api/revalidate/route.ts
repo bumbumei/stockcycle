@@ -13,7 +13,8 @@ export const dynamic = "force-dynamic";
  *  - 헤더: `Authorization: Bearer <secret>` 또는
  *  - 쿼리: `?secret=<secret>`
  *
- * body (optional): {"paths": ["/", "/stocks/..."]} — 기본값은 "/".
+ * body (optional): {"paths": ["/", "/etf", "/stocks/[ticker]"]} — 기본값은 "/".
+ *   "[...]" 가 포함된 경로는 동적 라우트 전체(모든 종목 상세 페이지)를 무효화한다.
  */
 export async function POST(req: Request) {
   const expected = process.env.REVALIDATE_SECRET;
@@ -46,7 +47,9 @@ export async function POST(req: Request) {
   }
 
   for (const p of paths) {
-    revalidatePath(p);
+    // "/stocks/[ticker]" 처럼 동적 세그먼트가 들어간 경로는 해당 라우트의 모든 페이지를 무효화
+    if (p.includes("[")) revalidatePath(p, "page");
+    else revalidatePath(p);
   }
 
   return NextResponse.json({

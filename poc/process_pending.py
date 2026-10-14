@@ -4,7 +4,7 @@ pending_tickers 에 쌓인 추가 요청을 처리.
 동작:
   - status='pending' 인 티커를 하나씩 가져와 백필
   - 6자리 숫자 → pykrx (KOSPI/KOSDAQ)
-  - 그 외 (영문) → yfinance (NASDAQ/NYSE)
+  - 그 외 (영문) → yfinance (NASDAQ/NYSE, ETF 면 US_ETF)
   - 성공: tickers 테이블에 추가 + pending에서 삭제
   - 실패: pending에 status='error', error_msg 기록
 
@@ -160,15 +160,23 @@ def process_one(
         df = fetch_ohlcv_us(ticker, start_dt.strftime("%Y-%m-%d"),
                             (end_dt + relativedelta(days=1)).strftime("%Y-%m-%d"))
         # 이름: 사용자 입력 > yfinance info > 티커
+        # 시장: 사용자 hint > (quoteType=ETF 면 US_ETF) > 거래소 자동 판별
         resolved_name = requested_name or ticker
-        if not requested_name:
+        info: dict = {}
+        if not requested_name or not market_hint:
             try:
                 import yfinance as yf
-                info = yf.Ticker(ticker).info
-                resolved_name = info.get("longName") or info.get("shortName") or ticker
+                info = yf.Ticker(ticker).info or {}
             except Exception:
-                pass
-        market = market_hint or detect_exchange(ticker)
+                info = {}
+        if not requested_name:
+            resolved_name = info.get("longName") or info.get("shortName") or ticker
+        if market_hint:
+            market = market_hint
+        elif str(info.get("quoteType") or "").upper() == "ETF":
+            market = "US_ETF"
+        else:
+            market = detect_exchange(ticker)
 
     if df.empty:
         raise ValueError(f"데이터 0행 — 상장 이력 없음 또는 지연")
@@ -201,7 +209,7 @@ def trigger_revalidate() -> None:
                 "Authorization": f"Bearer {secret}",
                 "Content-Type": "application/json",
             },
-            data=b'{"paths":["/"]}',
+            data=b'{"paths":["/","/etf","/stocks/[ticker]"]}',
         )
         with urlopen(req, timeout=15) as resp:
             body = resp.read().decode("utf-8", errors="replace")

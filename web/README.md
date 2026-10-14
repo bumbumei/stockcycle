@@ -70,6 +70,24 @@ npm run dev
 ## 주요 기능
 
 - **홈 `/`** — 등록된 종목 카드 그리드 (한국/미국 혼합)
+- **미국 ETF 트렌드 `/etf`** — `market='US_ETF'` 유니버스(기본 100개, `poc/tickers_etf_us.tsv`)의
+  기간별(1주·1개월·2개월·3개월·6개월·1년·2년·3년) 수익률 **Top 10 / Worst 10**
+  - 분류(시장대표/섹터/테마/국가/원자재/리츠) 필터, ★ 관심 ETF만 보기
+  - 전체 표: 전일 대비 · 추세(50/200일선) · 변동성 · 위험조정 수익률 · 1년 최대낙폭 ·
+    52주 고점 대비 · 3년 가격 위치 · 총보수 · 배당 주기, 분류별 묶기
+  - 분석: 매크로 환경(VIX/미 10년물/달러인덱스/WTI/원달러 + 1주·1개월 변동), 시장 폭(이평선 위 비율),
+    분류별 동일가중 평균 수익률(로테이션), 시그널(52주 신고가·신저가 근접, 저점 반등, 추세 전환 초기),
+    순위 변동(▲▼, 7일 전 스냅샷 대비), 위험조정(수익률 ÷ 기간 변동성) 랭킹 모드
+  - "주간 리포트 복사": 기존 주간알람 시트 포맷(1개월 + 3개월 Top/Worst 10) 텍스트
+  - 로직: `lib/etf.ts`(순수 헬퍼·분석) + `lib/queries.ts#etfTrend / #macroSnapshot`(SQL) +
+    `components/EtfTrend.tsx`
+- **ETF 목록 편집 `/etf/manage`** — 유니버스 ETF 추가·수정(이름/분류/라벨/운용사/수수료/배당/설명)·
+  숨김/복구·완전 삭제. 읽기는 공개, 쓰기는 `ADMIN_SECRET`(없으면 `REVALIDATE_SECRET`) 키를
+  `Authorization: Bearer` 로 보내야 한다. 키는 브라우저 localStorage 에만 저장.
+  - API: `GET/POST /api/etf/universe`, `PUT/PATCH/DELETE /api/etf/universe/[ticker]`,
+    `POST /api/admin/verify`
+  - 숨김 = `etf_meta.hidden=1` → `/etf` 집계에서만 제외(수집·홈 표시 유지). 삭제 = 가격·메타·대기열·티커 제거.
+  - 시드 스크립트(`poc/seed_etf_us.py`)는 기본적으로 없는 티커만 추가하므로 편집 내용이 보존됨.
 - **종목 상세 `/stocks/[ticker]`**
   - 4 요약 카드: 데이터 기간 / 평균 상승확률 / 최강 월 / 최약 월
   - **연×월 히트맵**: 색상으로 수익률 시각화 (녹색=상승, 빨강=하락)
@@ -78,6 +96,7 @@ npm run dev
   - `GET /api/tickers` — 전체 종목
   - `GET /api/tickers?q=삼성` — 검색
   - `GET /api/stocks/005930/monthly` — 월별 집계 + 원시 수익률
+  - `GET /api/etf/trend` — 미국 ETF 기간별 수익률 (`/etf` 페이지와 동일 데이터)
 
 ## 핵심 결정
 

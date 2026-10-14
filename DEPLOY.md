@@ -74,12 +74,15 @@ gh repo create stockcycle --public --source=. --push
 4. **Environment Variables**에 추가:
    ```
    DATABASE_URL = postgresql://user:pw@host/neondb?sslmode=require
+   ADMIN_SECRET = <긴 임의 문자열>   # /etf/manage ETF 목록 편집기의 관리자 키 (없으면 REVALIDATE_SECRET 사용)
    ```
 5. "Deploy" 클릭 → 약 1~2분 후 `https://<proj>.vercel.app` 배포 완료
 
 ### 2-3) 동작 확인
 - `/` — 종목 카드 목록 표시
 - `/stocks/005930` — 히트맵 렌더링
+- `/etf` — 미국 ETF 트렌드 (Actions 에서 `seed-etf-us` 1회 실행 후 데이터 표시)
+- `/etf/manage` — ETF 목록 편집 (관리자 키 입력 후 추가·수정·숨김·삭제)
 - `/api/tickers` — JSON 응답
 
 ## 3. GitHub Actions 일일 자동 수집
@@ -136,6 +139,8 @@ Value: postgresql://user:pw@host/neondb?sslmode=require
 - `backfill-kr-top50` — 한국 시총 50위 10년 전체 재수집
 - `backfill-us-sp50` — S&P500 상위 50 10년 전체 재수집
 - `backfill-macro` — 매크로 5지표 10년 전체 재수집
+- `seed-etf-us` — 미국 ETF 유니버스(`poc/tickers_etf_us.tsv`, 100개) 메타 동기화 + 누락 티커 백필.
+  `/etf` ETF 트렌드 페이지를 처음 켤 때 1회 실행 (재실행해도 안전, 이미 수집된 티커는 건너뜀)
 
 ### 3-6) 모니터링
 
@@ -197,9 +202,15 @@ DATABASE_URL=postgresql://user:pw@host/neondb?sslmode=require
 - node-postgres는 `NUMERIC`을 string으로 반환 → `queries.ts`의 `Number(...)` 정규화가 이미 처리함.
 - 새 쿼리 추가 시 동일 패턴 적용 필요.
 
-### 한국 리전 지연이 크다
-- Neon AWS Tokyo → 한국 왕복 ~40ms, 보통 무시 가능
-- 더 낮추려면 Vercel Edge 배포 고려 (단, pg 클라이언트는 Node 런타임 필요)
+### 페이지가 느리다 (특히 종목 상세 첫 클릭)
+- 서버 함수 리전과 DB 리전이 멀면 DB 왕복마다 200ms+ 가 든다. 실측(2026-10): Vercel 기본 리전
+  iad1(미국 동부) ↔ Neon ap-southeast-1(싱가포르) 왕복 218ms, 연결 수립 1.4초.
+- `web/vercel.json` 의 `"regions": ["sin1"]` 이 서버 함수를 싱가포르에서 돌게 한다 (Hobby 플랜도 리전 1개 선택 가능).
+  Neon 프로젝트를 다른 리전에 만들었다면 그 리전 코드로 바꿀 것 (Tokyo = `hnd1`).
+- 종목 상세는 1시간 ISR 캐시 + DB 왕복 1회로 바뀌었고, `/api/stocks/<티커>/monthly?debug=1` 로 서버 처리 시간을 분해해 볼 수 있다.
+- Neon 무료 플랜은 5분 쉬면 컴퓨트가 잠들어 첫 요청이 1~3초 느리다. 서버리스에서는 `DATABASE_URL` 을
+  **pooled 엔드포인트**(호스트명에 `-pooler` 가 붙은 주소, Neon 콘솔 → Connection Details → "Pooled connection")로
+  쓰면 연결 수립이 더 빠르다.
 
 ## 7. 다음 단계
 
