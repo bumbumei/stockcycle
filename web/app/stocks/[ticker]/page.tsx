@@ -2,24 +2,59 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import FavoriteButton from "@/components/FavoriteButton";
 import Heatmap from "@/components/Heatmap";
-import { getTicker, monthlyReturns, monthlyStats } from "@/lib/queries";
+import { getTicker, monthlyReturns, monthlyStats, pingDb } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
+// 서버 함수 인스턴스가 뜬 시각 — 요청 시점과의 차이가 작으면 콜드 스타트 직후.
+const BOOTED_AT = Date.now();
+
+type Timings = {
+  pingMs: number;      // DB 연결 수립 + 왕복 1회
+  tickerMs: number;    // 종목 메타 조회
+  monthlyMs: number;   // 월별 통계 + 월별 수익률 (병렬)
+  totalMs: number;
+  region: string;
+  uptimeS: number;     // 함수 기동 후 경과 초
+};
+
 export default async function StockPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ ticker: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { ticker } = await params;
   const decoded = decodeURIComponent(ticker);
+  const sp = await searchParams;
+  const debug = sp.debug !== undefined;
+
+  const t0 = performance.now();
+  await pingDb();
+  const t1 = performance.now();
   const meta = await getTicker(decoded);
   if (!meta) notFound();
+  const t2 = performance.now();
 
   const [stats, returns] = await Promise.all([
     monthlyStats(decoded),
     monthlyReturns(decoded),
   ]);
+  const t3 = performance.now();
+
+  const timings: Timings = {
+    pingMs: Math.round(t1 - t0),
+    tickerMs: Math.round(t2 - t1),
+    monthlyMs: Math.round(t3 - t2),
+    totalMs: Math.round(t3 - t0),
+    region: process.env.VERCEL_REGION ?? "local",
+    uptimeS: Math.round((Date.now() - BOOTED_AT) / 1000),
+  };
+  console.log(
+    `[stocks/${decoded}] ping ${timings.pingMs}ms, ticker ${timings.tickerMs}ms, monthly ${timings.monthlyMs}ms, ` +
+      `total ${timings.totalMs}ms (region ${timings.region}, uptime ${timings.uptimeS}s)`
+  );
 
   // 요약 통계
   const bestMonth = [...stats].sort((a, b) => b.up_probability - a.up_probability)[0];
@@ -71,7 +106,31 @@ export default async function StockPage({
       </section>
 
       <Heatmap returns={returns} stats={stats} />
+
+      {debug && <DebugTimings t={timings} />}
     </div>
+  );
+}
+
+/** `?debug=1` 일 때만 표시 — 이 요청의 서버 처리 시간 분해. 브라우저가 보는 총 시간은 여기에 네트워크 왕복 + 함수 콜드 스타트가 더해진다. */
+function DebugTimings({ t }: { t: Timings }) {
+  const cold = t.uptimeS < 5;
+  return (
+    <section className="bg-gray-900 border border-sky-900/60 rounded p-3 text-xs">
+      <div className="text-sm font-semibold text-sky-200 mb-2">서버 처리 시간 (이 요청)</div>
+      <table className="text-left">
+        <tbody className="text-gray-300">
+          <tr><td className="pr-4 py-0.5 text-gray-500">DB 연결 + 왕복 1회</td><td className="tabular-nums">{t.pingMs} ms</td></tr>
+          <tr><td className="pr-4 py-0.5 text-gray-500">종목 메타 조회</td><td className="tabular-nums">{t.tickerMs} ms</td></tr>
+          <tr><td className="pr-4 py-0.5 text-gray-500">월별 통계 + 수익률 (병렬)</td><td className="tabular-nums">{t.monthlyMs} ms</td></tr>
+          <tr className="font-semibold text-white"><td className="pr-4 py-0.5">서버 합계</td><td className="tabular-nums">{t.totalMs} ms</td></tr>
+        </tbody>
+      </table>
+      <p className="mt-2 text-[11px] text-gray-500">
+        리전 {t.region} · 함수 기동 후 {t.uptimeS}초{cold ? " (콜드 스타트 직후 — 첫 연결 비용 포함)" : " (웜)"}.
+        브라우저 DevTools → Network → 이 문서의 &ldquo;Waiting (TTFB)&rdquo;에서 서버 합계를 빼면 함수 기동 + 네트워크 시간입니다.
+      </p>
+    </section>
   );
 }
 

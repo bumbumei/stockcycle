@@ -58,6 +58,7 @@ export type EtfTrendData = {
   count: number;             // 유니버스 크기 (market='US_ETF' 티커 수)
   rows: EtfTrendRow[];
   error?: string;            // 조회 실패 시 (테이블 미생성 등) 사유
+  timings?: { universeMs: number; snapshotsMs: number; totalMs: number }; // 서버 조회 소요 (진단용)
 };
 
 // ── 유니버스 목록 편집 (/etf/manage) ──────────────────────────

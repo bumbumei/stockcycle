@@ -126,6 +126,11 @@ export async function searchTickers(q: string, limit = 20): Promise<TickerRow[]>
   );
 }
 
+/** DB 왕복 1회 (연결 수립 + 네트워크 지연 측정용). */
+export async function pingDb(): Promise<void> {
+  await selectOne<{ ok: number }>("SELECT 1 AS ok");
+}
+
 export async function getTicker(ticker: string): Promise<TickerRow | undefined> {
   return selectOne<TickerRow>(
     "SELECT ticker, name, market FROM tickers WHERE ticker = ?",
@@ -579,18 +584,22 @@ async function fetchSnapshots(base: string): Promise<Map<string, Snapshot>> {
  * (빌드 타임 프리렌더가 깨지지 않도록).
  */
 export async function etfTrend(): Promise<EtfTrendData> {
+  const t0 = performance.now();
   try {
     const [universe, asOfRow] = await Promise.all([
       selectAll<Record<string, unknown>>(QUERY_ETF_UNIVERSE),
       selectOne<{ as_of: string | null }>(QUERY_ETF_AS_OF),
     ]);
+    const tUniverse = performance.now() - t0;
     const asOf = asOfRow?.as_of ? String(asOfRow.as_of) : null;
     if (universe.length === 0) return { asOf, prevAsOf: null, count: 0, rows: [] };
 
     // 가격이 전혀 없어도 유니버스는 보여줄 수 있도록 기준일이 없으면 오늘 날짜 사용
     const base = asOf ?? new Date().toISOString().slice(0, 10);
     const prevBase = shiftDays(base, RANK_COMPARE_DAYS);
+    const t1 = performance.now();
     const [now, prev] = await Promise.all([fetchSnapshots(base), fetchSnapshots(prevBase)]);
+    const tSnapshots = performance.now() - t1;
 
     const rows: EtfTrendRow[] = universe.map((u) => {
       const ticker = String(u.ticker);
@@ -627,7 +636,16 @@ export async function etfTrend(): Promise<EtfTrendData> {
       };
     });
 
-    return { asOf, prevAsOf: asOf ? prevBase : null, count: rows.length, rows };
+    const timings = {
+      universeMs: Math.round(tUniverse),
+      snapshotsMs: Math.round(tSnapshots),
+      totalMs: Math.round(performance.now() - t0),
+    };
+    console.log(
+      `[etfTrend] universe ${timings.universeMs}ms, snapshots×2 ${timings.snapshotsMs}ms, total ${timings.totalMs}ms` +
+        ` (region ${process.env.VERCEL_REGION ?? "local"})`
+    );
+    return { asOf, prevAsOf: asOf ? prevBase : null, count: rows.length, rows, timings };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[etfTrend] query failed:", msg);
