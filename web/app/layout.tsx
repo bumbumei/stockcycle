@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import NavTabs from "@/components/NavTabs";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "StockCycle — 월별 주식 패턴",
-  description: "10년 데이터 기반 월별 상승/하락 확률 분석",
+  title: "StockCycle — 월별 주식 패턴 · 미국 ETF 트렌드",
+  description: "10년 데이터 기반 월별 상승/하락 확률 분석과 미국 ETF 기간별 수익률 랭킹",
 };
 
 export default function RootLayout({
@@ -24,6 +25,7 @@ export default function RootLayout({
               <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border border-amber-600/60 text-amber-300 bg-amber-500/10 tracking-wide">
                 핀부격차 Version 2.0
               </span>
+              <NavTabs />
             </div>
             <div className="text-xs text-gray-400">
               과거 패턴 참고용 · 투자 권유 아님

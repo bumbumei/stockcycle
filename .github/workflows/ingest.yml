@@ -22,6 +22,7 @@ on:
           - backfill-kr-top50     # 한국 시총 50 10년 백필 (1회용)
           - backfill-us-sp50      # S&P 50 10년 백필 (1회용)
           - backfill-macro        # 매크로 10년 백필 (1회용)
+          - seed-etf-us           # 미국 ETF 유니버스(tickers_etf_us.tsv) 메타 동기화 + 누락 티커 백필
 
 concurrency:
   group: ingest-${{ github.workflow }}
@@ -91,6 +92,10 @@ jobs:
       - name: Backfill — Macro (one-shot)
         if: ${{ inputs.mode == 'backfill-macro' }}
         run: python backfill_macro.py --years 10
+
+      - name: Seed — US ETF universe (idempotent)
+        if: ${{ inputs.mode == 'seed-etf-us' }}
+        run: python seed_etf_us.py --years 10
 
       - name: Summary
         if: always()

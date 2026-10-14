@@ -1,0 +1,103 @@
+# 형식(탭 구분): 티커	분류	벤치마크(한글 라벨)	운용사	이름	수수료(소수, 0.0009=0.09%)	배당기준	설명
+# 출처: 'Global ETF 100선' 시트의 기본데이터 탭. ETF 트렌드 뷰어(/etf)의 기본 유니버스.
+# 행을 추가/삭제/수정한 뒤 `python seed_etf_us.py` 를 실행하면 DB(tickers + etf_meta)에 반영된다.
+SPY	시장대표	SnP 500	State Street	SPDR S&P 500 ETF Trust	0.0009	분기	미국 증시 대표 주가지수 S&P 500를 추종하는 대표 ETF 세계 최대의 ETF. 시가총액, 거래대금 규모 1위. 일평균 거래대금 250억달러 상회 충분한 유동성과 규모를 기반으로 S&P 500의 수익률을 오차없이 완전 복제 견고한 펀더멘탈과 기술주의 뒷받침으로 미국 증시의 글로벌 주도주 지위 지속될 전망
+DIA	시장대표	DOW 지수	State Street	SPDR Dow Jones Industrial Average ETF Trust	0.0016	월	다우존스사가 뉴욕증권시장에 상장된 우량기업 30개 종목 시장가격을 평균한 지수 미국 증권시장의 동향과 시세를 알려주는 대표적인 주가지수 표본 종목의 수가 적고, 주당가격을 가중치로 산출한다는 점이 리스크 요인 미국시장의 평균수익률을 추종하고자 할 때 추천
+QQQ	시장대표	나스닥 100	Invesco	Invesco QQQ Trust, Series 1	0.002	분기	나스닥 100을 추종하는 ETF. 나스닥에 상장된 비금융 기업을 편입 FAANG을 비롯한 대형 기술주 압축 투자 성향. FAANG 비중은 45%를 상회 성장주 ETF(VUG) 대비 비용은 열위이나 유동성, 규모는 우위 Tech Giant 고성장 지속으로 세계 증시의 주도주 지위 유지될 전망
+IWM	시장대표	러셀 2000	iShares	iShares Russell 2000 ETF	0.0019	분기	미국 중소형주 대표 지수인 Russell 2000을 추종하는 ETF 미국 시가총액 1,001 ~ 3,000dnl 기업에 시총가중 방식으로 투자 S&P500 대비 1)내수비중, 2)경기민감도, 3)변동성이 높은 것이 특징 Russell 2000은 코로나 19의 충격을 가장 크게 받았고 경기 정상화 시 반등폭이 가장 높을 지수
+FEZ	시장대표	유로존	State Street	SPDR EURO STOXX 50 ETF	0.0029	분기	EuroStoxx50을 추종하며, 50개 대형주 시가총액 가중 방식으로 편입 유로존 상장기업만 편입. 비중의 2/3가 프랑스, 독일기업. 비유로존 상장기업은 투자 배제 유로화 익스포저를 헤지하지 않아 유로화 환율 변동에 노출 약달러 + 글로벌 경기 개선 조건에서 투자 매력 극대화되는 ETF
+FM	시장대표	프런티어 마켓	iShares	iShares Frontier and Select EM ETF	0.0032	반기	미국, 캐나다, 한국을 제외한 선진국 증시에 투자하는 ETF 구성종목수는 903개로 시가총액 가중방식 주식 대여 수익으로 수수료 일부를 상쇄하여 비용 절감 선진국 증시에 소액으로 분산 투자할 수 있는 ETF
+VWO	시장대표	이머징 마켓	Vanguard	Vanguard FTSE Emerging Markets ETF	0.0008	분기	자본시장에서 새로이 급성장하고 있는 국가들의 시장 국가별 비중은 중국, 대만, 인도, 브라질, 남아공 순서 종목별 비중은 텐센트, 알리바바 순으로 중국기업 비중이 높음 이머징 시장 전체수익률을 추구하고자 할때 추천
+XLF	섹터	SnP500 금융	State Street	Financial Select Sector SPDR Fund	0.001	분기	S&P500 금융섹터 기업에 시가총액 가중으로 투자 하위 산업으로 은행, 모기지 금융, 자본시장, 소비자 금융, 보험, 지주회사를 포괄 금융 ETF 중 규모, 유동성, 운용비용 측명에서 여타 ETF 압도 금융 규제 완화와 Fed 통화정책에 따른 금융 리스크 감소로 하반기 이익 회복 기대
+XLI	섹터	SnP500 산업재	State Street	Industrial Select Sector SPDR Fund	0.001	분기	S&P500 산업재 섹터 기업에 시가총액 가중으로 투자 하위 산업으로 자본재 (항공우주/방산,건설), 운송, 상업전문서비스를 포괄 산업재 ETF 내 규모, 유동성, 운용비용 측면에서 최고의 선택지이나 대형주 편중 5년간의 수주 절벽 기저효과와 맞물린 펀더멘탈 회복 기대
+XLE	섹터	SnP500 에너지	State Street	Energy Select Sector SPDR Fund	0.001	분기	S&P500 에너지 섹터 기업에 시가총액 가중으로 투자 하위 산업으로 에너지 시추, 장비, 탐사, 운송, 정제업까지 포괄 에너지 섹터 ETF 중 시가총액, 비용, 추적 오차, 유동성 등 대다수 지표 압도적 우위 롤오버 위험이 없고 비용이 낮아 유가 강세를 노린 장기 투자 시 원유 ETF보다 더 적합
+XLV	섹터	SnP500 헬스케어	State Street	Health Care Select Sector SPDR Fund	0.001	분기	미국 헬스케어 투자 대표 ETF. S&P500 내 헬스케어 기업에 투자 하위 산업으로 의료장비/서비스, 제약, 생명과학, 바이오 산업을 포괄 유동성, 거래량, 벤치마크 추적오차, 비용 측면에서 여타 헬스케어 ETF의 추종 불허 헬스케어는 Post-Corona 시대에서 더욱 각광받을 섹터 (성장성,밸류에이션매력,반사수혜)
+XBI	섹터	SnP 바이오테크	State Street	SPDR S&P Biotech ETF	0.0035	분기	S&P 바이오테크 산업지수를 추종 IBB ETF에 이어서 바이오 ETF 시가총액 2위 유동성, 거래량, 벤치마크 추적오차, 비용 측면에서 여타 바이오 ETF의 추종 불허 대형 바이오테크 기업들보다는 중소형 기업들의 포지션이 높음
+XLK	섹터	SnP 테크놀로지	State Street	Technology Select Sector SPDR Fund	0.001	분기	S&P500 IT 섹터 기업에 시가총액 가중방식으로 투자 하위 산업으로 반도체, IT 하드웨어, IT 소프트웨어를 포괄 QQQ, VUG 대비 대형주 편입비중이 높고, 순수 IT 투자 가능 코로나19에도 미국 IT 산업 성장성 높고, IT 중심 성장구조는 장기간 지속될 전망
+XLP	섹터	필수소비재	State Street	Consumer Staples Select Sector SPDR Fund	0.001	분기	
+XLY	섹터	경기소비재	State Street	Consumer Discretionary Select Sector SPDR Fund	0.001	분기	
+XLC	섹터	커뮤니케이션	State Street	Communication Services Select Sector SPDR Fund	0.001	분기	
+XLU	섹터	유틸리티	State Street	Utilities Select Sector SPDR Fund	0.001	분기	
+XLB	섹터	소재	State Street	Materials Select Sector SPDR Fund	0.001	분기	
+XLRE	섹터	부동산	State Street	Real Estate Select Sector SPDR Fund	0.001	분기	
+SOXX	테마	반도체	iShares	iShares Semiconductor ETF	0.004	분기	
+SKYY	테마	클라우드 컴퓨팅	First Trust	First Trust Cloud Computing ETF	0.006	분기	
+QTUM	테마	양자 컴퓨팅	Defiance	Defiance Quantum ETF	0.007	분기	
+GRID	테마	스마트그리드	First Trust	First Trust NASDAQ Clean Edge Smart Grid Infrastructure Index Fund	0.0063	분기	
+SNSR	테마	사물인터넷	Global X	Global X Internet of Things ETF	0.0068	반기	
+BOTZ	테마	로보틱스 AI	Global X	Global X Robotics and Artificial Intelligence ETF	0.0068	연	
+ROBO	테마	로봇 자동화	ROBO Global	ROBO Global Robotics and Automation Index ETF	0.0095	연	
+METV	테마	메타버스	Roundhill	Roundhill Metaverse ETF	0.0059		
+AIQ	테마	AI 기술	Global X	Global X Artificial Intelligence & Technology ETF	0.0068	반기	
+DRIV	테마	자율주행 전기차	Global X	Global X Autonomous & Electric Vehicles ETF	0.0068	반기	
+ARKF	테마	핀테크	ARK	ARK Blockchain & Fintech Innovation ETF	0.0068	연	
+BLOK	테마	블록체인	Amplify	Amplify Blockchain Technology ETF	0.0071	연	
+AOA	테마	자산배분	iShares	iShares Core 80/20 Aggressive Allocation ETF	0.005		
+CIBR	테마	사이버보안	First Trust	First Trust NASDAQ Cybersecurity ETF	0.006	반기	
+LIT	테마	리튬 2차전지	Global X	Global X Lithium & Battery Tech ETF	0.0075	반기	
+ARKK	테마	혁신 기술주	ARK	ARK Innovation ETF	0.0075	연	
+PRNT	테마	3D 프린트	ARK	3D Printing ETF	0.0066	연	
+FAN	테마	풍력	First Trust	First Trust Global Wind Energy ETF	0.006	분기	
+IYT	테마	운송	iShares	iShares US Transportation ETF	0.0039	분기	
+KOMP	테마	AI기반 기술주	State Street	SPDR S&P Kensho New Economies Composite ETF	0.0065	연	
+IPAY	테마	전자 결제	Amplify	Amplify Digital Payments ETF	0.0075	연	
+TLT	테마	미국 장기채	iShares	iShares 20+ Year Treasury Bond ETF	0.0086	연	
+SOCL	테마	소셜미디어	Global X	Global X Social Media ETF	0.0065		
+INFL	테마	인플레 수혜주	Horizon Kinetics	Horizon Kinetics Inflation Beneficiaries ETF	0.0075		
+KRBN	테마	탄소배출권	KraneShares	KraneShares Global Carbon Strategy ETF	0.0078	연	
+IPO	테마	신규상장	Renaissance	Renaissance IPO ETF	0.006		
+CPER	원자재	구리	USCF	United States Copper Index Fund	0.007	분기	
+PKW	테마	자사주 매입	Invesco	Invesco Buyback Achievers ETF	0.0061	분기	
+SLV	원자재	실버	iShares	iShares Silver Trust	0.005	반기	
+URA	원자재	우라늄	Global X	Global X Uranium ETF	0.0069	반기	
+BDRY	테마	BDI 운임지수	Breakwave	Breakwave Dry Bulk Shipping ETF	0.016		
+XT	테마	글로벌 기술주	iShares	iShares Exponential Technologies ETF	0.0044	분기	
+EDOC	테마	원격 의료	Global X	Global X Telemedicine & Digital Health ETF	0.0068		
+IHI	테마	의료 기기	iShares	iShares US Medical Devices ETF	0.0039	분기	
+ARKG	테마	유전체	ARK	ARK Genomic Revolution ETF	0.005	반기	
+JETS	테마	항공기	U.S. Global	US Global Jets ETF	0.006	연	
+PEJ	테마	여가 엔터	Invesco	Invesco Leisure and Entertainment ETF	0.0055	분기	
+INDA	국가	인도	iShares	iShares MSCI India ETF	0.0075	분기	
+ITA	테마	항공 방위	iShares	iShares US Aerospace & Defense ETF	0.0039	분기	
+EWA	국가	호주	iShares	iShares MSCI Australia ETF	0.0047	반기	
+IGF	테마	글로벌 인프라	iShares	iShares Global Infrastructure ETF	0.004	반기	
+UNG	원자재	천연가스	USCF	United States Natural Gas Fund LP	0.0111		
+ESPO	테마	게임 산업	VanEck	VanEck Video Gaming and eSports ETF	0.0055	연	
+ESGU	테마	ESG	iShares	iShares ESG Aware MSCI USA ETF	0.0015	분기	
+PBW	테마	친환경 에너지	Invesco	Invesco WilderHill Clean Energy ETF	0.0062	분기	
+ICLN	테마	신재생 에너지	iShares	iShares Global Clean Energy ETF	0.004	반기	
+TAN	테마	태양광	Invesco	Invesco Solar ETF	0.0066	연	
+HYDR	테마	수소 산업	Global X	Global X Hydrogen ETF	0.003		
+PHO	테마	수자원 인프라	Invesco	Invesco Water Resources ETF	0.0059	분기	
+KRE	테마	지방 은행	State Street	SPDR S&P Regional Banking ETF	0.002	반기	
+PALL	원자재	팔라듐 실물	abrdn	abrdn Physical Palladium Shares ETF	0.006		
+MOAT	테마	경제적 해자	VanEck	VanEck Morningstar Wide Moat ETF	0.0046	연	
+SPYV	테마	가치주	State Street	SPDR Portfolio S&P 500 Value ETF	0.006	연	
+EWY	국가	한국	iShares	iShares MSCI South Korea ETF	0.0057	연	
+VNM	국가	베트남	VanEck	VanEck Vietnam ETF	0.0059	연	
+EWZ	국가	브라질	iShares	iShares MSCI Brazil ETF	0.0057	반기	
+EWJ	국가	일본	iShares	iShares MSCI Japan ETF	0.005	반기	
+EWT	국가	대만	iShares	iShares MSCI Taiwan ETF	0.0057	연	
+EWH	국가	홍콩	iShares	iShares MSCI Hong Kong ETF	0.005	반기	
+FXI	국가	중국	iShares	iShares China Large-Cap ETF	0.0074	반기	
+KWEB	테마	중국 인터넷	KraneShares	KraneShares CSI China Internet ETF	0.0069	연	
+SCHD	테마	다우 배당 100	Schwab	Schwab US Dividend Equity ETF	0.007	연	
+EWG	국가	독일	iShares	iShares MSCI Germany ETF	0.0095		
+JEPI	테마	월 배당	JPMorgan	JPMorgan Equity Premium Income ETF	0.0079	반기	
+PFF	테마	미국 우선주	iShares	iShares Preferred and Income Securities ETF	0.0045	월	
+CWB	테마	전환사채	State Street	SPDR Bloomberg Convertible Securities ETF	0.004	월	
+VYM	테마	고배당	Vanguard	Vanguard High Dividend Yield ETF	0.0058	월	
+VIG	테마	배당 성장	Vanguard	Vanguard Dividend Appreciation ETF	0.0035	분기	
+CORN	원자재	옥수수	Teucrium	Teucrium Corn Fund	0.0176		
+INDS	리츠	물류창고 리츠	Pacer	Pacer Industrial Real Estate ETF	0.006	분기	
+SRVR	리츠	데이터센터 리츠	Pacer	Pacer Data & Infrastructure Real Estate ETF	0.006	분기	
+PDBC	원자재	원자재 선물	Invesco	Invesco Optimum Yield Diversified Commodity Strategy No K-1 ETF	0.0062	연	
+GLD	원자재	골드	State Street	SPDR Gold Trust	0.004		
+USO	원자재	원유	USCF	United States Oil Fund LP	0.0081		
+COPX	테마	구리 광산업	Global X	Global X Copper Miners ETF	0.0065	연	
+REMX	테마	희귀광물 채굴	VanEck	VanEck Rare Earth and Strategic Metals ETF	0.0053	연	
+YOLO	원자재	마리화나	AdvisorShares	AdvisorShares Pure Cannabis ETF	0.0076	분기	
+BITO	테마	비트코인 선물	ProShares	ProShares Bitcoin ETF	0.0095		
+MOO	테마	농업경제	VanEck	VanEck Agribusiness ETF	0.0052	연	
+GDX	테마	금광업	VanEck	VanEck Gold Miners ETF	0.0051	연	금 관련 회사에 투자하는 ETF로 금 채굴 기업들에 주로 투자
+VIXY	시장대표	SnP500 VIX	ProShares	ProShares VIX Short-Term Futures ETF	0.0089	분기	미국에 상장된 VIX 추종 ETF 중 자산규모 최상위 ETF VIX 선물을 직접 보유하지 않으며 시장가격 추종과 지급보증은 운용사인 Barclays의 신용 영향 시장 급락과 변동성 장에서 자산 차익을 추구하도록 설계 변동성 헷지 + 롤오버 비용이 통상 월 5% 이상 NAV에 반영돼 장기 보유에는 부적합

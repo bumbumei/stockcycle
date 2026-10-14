@@ -51,6 +51,20 @@ CREATE TABLE IF NOT EXISTS pending_tickers (
 CREATE INDEX IF NOT EXISTS idx_pending_status
     ON pending_tickers(status);
 
+-- 미국 ETF 트렌드 뷰어용 메타 (분류/한글 라벨). tickers.market='US_ETF' 와 짝.
+CREATE TABLE IF NOT EXISTS etf_meta (
+    ticker      TEXT PRIMARY KEY,
+    category    TEXT,                 -- '시장대표' | '섹터' | '테마' | '국가' | '원자재' | '리츠'
+    label       TEXT,                 -- 벤치마크/테마 한글 라벨 (예: '브라질', '반도체')
+    issuer      TEXT,
+    expense_ratio DOUBLE PRECISION,   -- 총보수 (소수: 0.0009 = 0.09%)
+    dividend_freq TEXT,               -- '월' | '분기' | '반기' | '연'
+    description TEXT,
+    sort_order  INTEGER,
+    updated_at  TEXT NOT NULL,
+    FOREIGN KEY (ticker) REFERENCES tickers(ticker)
+);
+
 CREATE TABLE IF NOT EXISTS ingestion_log (
     id          BIGSERIAL PRIMARY KEY,
     ticker      TEXT    NOT NULL,

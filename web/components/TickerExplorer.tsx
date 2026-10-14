@@ -16,12 +16,14 @@ const MARKET_LABEL: Record<string, string> = {
   ETF: "ETF",
   NASDAQ: "나스닥",
   NYSE: "NYSE",
+  US_ETF: "미국 ETF",
+  PCX: "NYSE Arca",
   US_OTHER: "미국",
 };
 
 function marketOrder(m: string): number {
   const order: Record<string, number> = {
-    KOSPI: 0, KOSDAQ: 1, ETF: 2, NASDAQ: 3, NYSE: 4, US_OTHER: 5,
+    KOSPI: 0, KOSDAQ: 1, ETF: 2, NASDAQ: 3, NYSE: 4, US_ETF: 5, PCX: 6, US_OTHER: 7,
   };
   return order[m] ?? 99;
 }

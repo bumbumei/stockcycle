@@ -80,6 +80,7 @@ gh repo create stockcycle --public --source=. --push
 ### 2-3) 동작 확인
 - `/` — 종목 카드 목록 표시
 - `/stocks/005930` — 히트맵 렌더링
+- `/etf` — 미국 ETF 트렌드 (Actions 에서 `seed-etf-us` 1회 실행 후 데이터 표시)
 - `/api/tickers` — JSON 응답
 
 ## 3. GitHub Actions 일일 자동 수집
@@ -136,6 +137,8 @@ Value: postgresql://user:pw@host/neondb?sslmode=require
 - `backfill-kr-top50` — 한국 시총 50위 10년 전체 재수집
 - `backfill-us-sp50` — S&P500 상위 50 10년 전체 재수집
 - `backfill-macro` — 매크로 5지표 10년 전체 재수집
+- `seed-etf-us` — 미국 ETF 유니버스(`poc/tickers_etf_us.tsv`, 100개) 메타 동기화 + 누락 티커 백필.
+  `/etf` ETF 트렌드 페이지를 처음 켤 때 1회 실행 (재실행해도 안전, 이미 수집된 티커는 건너뜀)
 
 ### 3-6) 모니터링
 

@@ -11,6 +11,7 @@ const ALLOWED_MARKETS = new Set([
   "ETF",
   "NASDAQ",
   "NYSE",
+  "US_ETF",
   "US_OTHER",
 ]);
 

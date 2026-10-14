@@ -68,6 +68,19 @@ CREATE TABLE IF NOT EXISTS pending_tickers (
 CREATE INDEX IF NOT EXISTS idx_pending_status
     ON pending_tickers(status);
 
+CREATE TABLE IF NOT EXISTS etf_meta (
+    ticker      TEXT PRIMARY KEY,
+    category    TEXT,
+    label       TEXT,
+    issuer      TEXT,
+    expense_ratio REAL,
+    dividend_freq TEXT,
+    description TEXT,
+    sort_order  INTEGER,
+    updated_at  TEXT    NOT NULL,
+    FOREIGN KEY (ticker) REFERENCES tickers(ticker)
+);
+
 CREATE TABLE IF NOT EXISTS ingestion_log (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     ticker      TEXT    NOT NULL,

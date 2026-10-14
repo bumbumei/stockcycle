@@ -19,6 +19,7 @@ const MARKETS = [
   { value: "ETF", label: "ETF (한국)" },
   { value: "NASDAQ", label: "NASDAQ" },
   { value: "NYSE", label: "NYSE" },
+  { value: "US_ETF", label: "ETF (미국)" },
 ];
 
 export default function AddTickerForm() {
