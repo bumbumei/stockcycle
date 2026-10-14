@@ -74,6 +74,7 @@ gh repo create stockcycle --public --source=. --push
 4. **Environment Variables**에 추가:
    ```
    DATABASE_URL = postgresql://user:pw@host/neondb?sslmode=require
+   ADMIN_SECRET = <긴 임의 문자열>   # /etf/manage ETF 목록 편집기의 관리자 키 (없으면 REVALIDATE_SECRET 사용)
    ```
 5. "Deploy" 클릭 → 약 1~2분 후 `https://<proj>.vercel.app` 배포 완료
 
@@ -81,6 +82,7 @@ gh repo create stockcycle --public --source=. --push
 - `/` — 종목 카드 목록 표시
 - `/stocks/005930` — 히트맵 렌더링
 - `/etf` — 미국 ETF 트렌드 (Actions 에서 `seed-etf-us` 1회 실행 후 데이터 표시)
+- `/etf/manage` — ETF 목록 편집 (관리자 키 입력 후 추가·수정·숨김·삭제)
 - `/api/tickers` — JSON 응답
 
 ## 3. GitHub Actions 일일 자동 수집

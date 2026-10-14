@@ -1,3 +1,4 @@
+import Link from "next/link";
 import EtfTrend from "@/components/EtfTrend";
 import { etfTrend, macroSnapshot } from "@/lib/queries";
 
@@ -11,7 +12,16 @@ export default async function EtfPage() {
   return (
     <div className="space-y-6">
       <section>
-        <h1 className="text-2xl font-bold mb-1">미국 ETF 트렌드</h1>
+        <div className="flex items-center justify-between gap-3 mb-1">
+          <h1 className="text-2xl font-bold">미국 ETF 트렌드</h1>
+          <Link
+            href="/etf/manage"
+            className="text-xs px-2.5 py-1 rounded border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 transition shrink-0"
+            title="유니버스 ETF 추가·수정·숨김·삭제 (관리자 키 필요)"
+          >
+            목록 편집
+          </Link>
+        </div>
         <p className="text-gray-400 text-sm">
           관심 미국 ETF를 모아 1주·1개월·2개월·3개월·6개월·1년·2년·3년 기간별 수익률 Top 10 /
           Worst 10을 봅니다. 수익률은 기준일에서 N일 전(달력일) 종가 대비 최신 종가이며 배당은

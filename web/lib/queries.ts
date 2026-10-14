@@ -10,8 +10,10 @@ import {
 } from "./db";
 import {
   ETF_PERIODS,
+  EtfMetaInput,
   EtfTrendData,
   EtfTrendRow,
+  EtfUniverseRow,
   MACRO_DEFS,
   MacroItem,
   PeriodMap,
@@ -58,6 +60,39 @@ async function runWrite(sql: string, params: unknown[] = []): Promise<number> {
   const db = getSqliteDb() as { prepare: (s: string) => { run: (...p: unknown[]) => { changes: number } } };
   const res = db.prepare(sql).run(...params);
   return res.changes ?? 0;
+}
+
+/** 여러 쓰기 문장을 하나의 트랜잭션으로 실행 (전부 성공 또는 전부 롤백). */
+async function runWrites(stmts: { sql: string; params?: unknown[] }[]): Promise<void> {
+  if (backend === "pg") {
+    const client = await getPgPool().connect();
+    try {
+      await client.query("BEGIN");
+      for (const s of stmts) {
+        const params = s.params ?? [];
+        await client.query(paramStyle(s.sql, params.length), params);
+      }
+      await client.query("COMMIT");
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
+    return;
+  }
+  const db = getSqliteDb() as {
+    exec: (s: string) => void;
+    prepare: (s: string) => { run: (...p: unknown[]) => unknown };
+  };
+  db.exec("BEGIN");
+  try {
+    for (const s of stmts) db.prepare(s.sql).run(...(s.params ?? []));
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  }
 }
 
 async function selectOne<T>(
@@ -358,6 +393,7 @@ SELECT t.ticker, t.name,
 FROM tickers t
 LEFT JOIN etf_meta em ON em.ticker = t.ticker
 WHERE t.market = '${ETF_MARKET}'
+  AND COALESCE(em.hidden, 0) = 0
 ORDER BY em.sort_order, t.ticker
 `;
 
@@ -404,6 +440,7 @@ WITH universe AS (
     FROM tickers t
     LEFT JOIN etf_meta em ON em.ticker = t.ticker
     WHERE t.market = '${ETF_MARKET}'
+      AND COALESCE(em.hidden, 0) = 0
 ),
 w AS (
     SELECT dp.ticker, dp.date, dp.close,
@@ -659,4 +696,178 @@ export async function listTickersWithMetrics(): Promise<TickerWithMetrics[]> {
     thisMonthExpected: numOrNull(r.this_month_expected),
     nextMonthExpected: numOrNull(r.next_month_expected),
   }));
+}
+
+// ── 미국 ETF 유니버스 목록 편집 (/etf/manage, 관리자 키 필요) ──────
+
+const QUERY_ETF_UNIVERSE_ADMIN = `
+SELECT t.ticker, t.name,
+       em.category, em.label, em.issuer,
+       em.expense_ratio, em.dividend_freq, em.description,
+       em.sort_order, COALESCE(em.hidden, 0) AS hidden,
+       COALESCE(s.n_rows, 0) AS n_rows, s.last_date,
+       p.status AS pending_status, p.error_msg AS pending_error
+FROM tickers t
+LEFT JOIN etf_meta em ON em.ticker = t.ticker
+LEFT JOIN (
+    SELECT ticker, COUNT(*) AS n_rows, MAX(date) AS last_date
+    FROM daily_prices
+    WHERE ticker IN (SELECT ticker FROM tickers WHERE market = '${ETF_MARKET}')
+    GROUP BY ticker
+) s ON s.ticker = t.ticker
+LEFT JOIN pending_tickers p ON p.ticker = t.ticker
+WHERE t.market = '${ETF_MARKET}'
+ORDER BY COALESCE(em.hidden, 0), em.sort_order, t.ticker
+`;
+
+/** 편집기용 전체 목록 (숨김 포함). 오류 시 빈 목록 + error. */
+export async function listEtfUniverse(): Promise<{ rows: EtfUniverseRow[]; error?: string }> {
+  try {
+    const raw = await selectAll<Record<string, unknown>>(QUERY_ETF_UNIVERSE_ADMIN);
+    const rows: EtfUniverseRow[] = raw.map((r) => ({
+      ticker: String(r.ticker),
+      name: String(r.name),
+      category: r.category ? String(r.category) : null,
+      label: r.label ? String(r.label) : null,
+      issuer: r.issuer ? String(r.issuer) : null,
+      expenseRatio: numOrNull(r.expense_ratio),
+      dividendFreq: r.dividend_freq ? String(r.dividend_freq) : null,
+      description: r.description ? String(r.description) : null,
+      sortOrder: numOrNull(r.sort_order),
+      hidden: Number(r.hidden ?? 0) === 1,
+      priceRows: Number(r.n_rows ?? 0),
+      lastDate: r.last_date ? String(r.last_date) : null,
+      pendingStatus: r.pending_status ? String(r.pending_status) : null,
+      pendingError: r.pending_error ? String(r.pending_error) : null,
+    }));
+    return { rows };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[listEtfUniverse] query failed:", msg);
+    return { rows: [], error: msg };
+  }
+}
+
+/** 유니버스(market='US_ETF')에 있는 티커인지. */
+export async function isEtfUniverseTicker(ticker: string): Promise<boolean> {
+  const row = await selectOne<{ market: string }>(
+    "SELECT market FROM tickers WHERE ticker = ?",
+    [ticker]
+  );
+  return row?.market === ETF_MARKET;
+}
+
+/** etf_meta 행을 만들거나 갱신. name 이 있으면 tickers.name 도 바꾼다. 정렬순서는 유지/뒤에 추가. */
+export async function upsertEtfMeta(ticker: string, meta: EtfMetaInput): Promise<void> {
+  const now = new Date().toISOString();
+  if (meta.name) {
+    await runWrite("UPDATE tickers SET name = ?, updated_at = ? WHERE ticker = ?", [
+      meta.name,
+      now,
+      ticker,
+    ]);
+  }
+  const exists = await selectOne<{ ticker: string }>(
+    "SELECT ticker FROM etf_meta WHERE ticker = ?",
+    [ticker]
+  );
+  if (exists) {
+    await runWrite(
+      `UPDATE etf_meta
+         SET category = ?, label = ?, issuer = ?, expense_ratio = ?,
+             dividend_freq = ?, description = ?, updated_at = ?
+       WHERE ticker = ?`,
+      [
+        meta.category, meta.label, meta.issuer, meta.expenseRatio,
+        meta.dividendFreq, meta.description, now, ticker,
+      ]
+    );
+    return;
+  }
+  const next = await selectOne<{ n: number }>(
+    "SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM etf_meta"
+  );
+  await runWrite(
+    `INSERT INTO etf_meta
+       (ticker, category, label, issuer, expense_ratio, dividend_freq, description,
+        sort_order, hidden, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+    [
+      ticker, meta.category, meta.label, meta.issuer, meta.expenseRatio,
+      meta.dividendFreq, meta.description, Number(next?.n ?? 0), now,
+    ]
+  );
+}
+
+/** 숨김(ETF 트렌드 집계 제외) 토글. etf_meta 행이 없으면 만든다. */
+export async function setEtfHidden(ticker: string, hidden: boolean): Promise<void> {
+  const now = new Date().toISOString();
+  const exists = await selectOne<{ ticker: string }>(
+    "SELECT ticker FROM etf_meta WHERE ticker = ?",
+    [ticker]
+  );
+  if (!exists) {
+    const next = await selectOne<{ n: number }>(
+      "SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM etf_meta"
+    );
+    await runWrite(
+      `INSERT INTO etf_meta (ticker, sort_order, hidden, updated_at) VALUES (?, ?, ?, ?)`,
+      [ticker, Number(next?.n ?? 0), hidden ? 1 : 0, now]
+    );
+    return;
+  }
+  await runWrite("UPDATE etf_meta SET hidden = ?, updated_at = ? WHERE ticker = ?", [
+    hidden ? 1 : 0,
+    now,
+    ticker,
+  ]);
+}
+
+/**
+ * 유니버스에 ETF 추가.
+ *   - tickers 에 이미 있으면 market='US_ETF' 로 보정 (가격 데이터는 그대로)
+ *   - 없으면 자리표시 행을 만들고 대기열(pending_tickers)에 넣어 다음 수집 때 10년 백필
+ *   - 가격이 하나도 없으면(이전 수집 실패 등) 역시 대기열에 넣는다
+ * 메타는 즉시 저장되고 숨김은 해제된다.
+ */
+export async function addEtfToUniverse(
+  ticker: string,
+  meta: EtfMetaInput
+): Promise<{ existed: boolean; queued: boolean }> {
+  const now = new Date().toISOString();
+  const existing = await getTicker(ticker);
+  let queued = false;
+  if (existing) {
+    await runWrite("UPDATE tickers SET market = ?, updated_at = ? WHERE ticker = ?", [
+      ETF_MARKET,
+      now,
+      ticker,
+    ]);
+  } else {
+    await runWrite(
+      "INSERT INTO tickers (ticker, name, market, updated_at) VALUES (?, ?, ?, ?)",
+      [ticker, meta.name ?? ticker, ETF_MARKET, now]
+    );
+  }
+  const cnt = await selectOne<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM daily_prices WHERE ticker = ?",
+    [ticker]
+  );
+  if (Number(cnt?.n ?? 0) === 0) {
+    await enqueuePending({ ticker, requestedName: meta.name, marketHint: ETF_MARKET });
+    queued = true;
+  }
+  await upsertEtfMeta(ticker, meta);
+  await setEtfHidden(ticker, false);
+  return { existed: Boolean(existing), queued };
+}
+
+/** 완전 삭제: 가격·메타·대기열·티커를 한 트랜잭션으로 제거 (ingestion_log 는 이력이라 남김). */
+export async function purgeEtf(ticker: string): Promise<void> {
+  await runWrites([
+    { sql: "DELETE FROM daily_prices WHERE ticker = ?", params: [ticker] },
+    { sql: "DELETE FROM etf_meta WHERE ticker = ?", params: [ticker] },
+    { sql: "DELETE FROM pending_tickers WHERE ticker = ?", params: [ticker] },
+    { sql: "DELETE FROM tickers WHERE ticker = ?", params: [ticker] },
+  ]);
 }

@@ -81,6 +81,13 @@ npm run dev
   - "주간 리포트 복사": 기존 주간알람 시트 포맷(1개월 + 3개월 Top/Worst 10) 텍스트
   - 로직: `lib/etf.ts`(순수 헬퍼·분석) + `lib/queries.ts#etfTrend / #macroSnapshot`(SQL) +
     `components/EtfTrend.tsx`
+- **ETF 목록 편집 `/etf/manage`** — 유니버스 ETF 추가·수정(이름/분류/라벨/운용사/수수료/배당/설명)·
+  숨김/복구·완전 삭제. 읽기는 공개, 쓰기는 `ADMIN_SECRET`(없으면 `REVALIDATE_SECRET`) 키를
+  `Authorization: Bearer` 로 보내야 한다. 키는 브라우저 localStorage 에만 저장.
+  - API: `GET/POST /api/etf/universe`, `PUT/PATCH/DELETE /api/etf/universe/[ticker]`,
+    `POST /api/admin/verify`
+  - 숨김 = `etf_meta.hidden=1` → `/etf` 집계에서만 제외(수집·홈 표시 유지). 삭제 = 가격·메타·대기열·티커 제거.
+  - 시드 스크립트(`poc/seed_etf_us.py`)는 기본적으로 없는 티커만 추가하므로 편집 내용이 보존됨.
 - **종목 상세 `/stocks/[ticker]`**
   - 4 요약 카드: 데이터 기간 / 평균 상승확률 / 최강 월 / 최약 월
   - **연×월 히트맵**: 색상으로 수익률 시각화 (녹색=상승, 빨강=하락)

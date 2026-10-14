@@ -60,6 +60,99 @@ export type EtfTrendData = {
   error?: string;            // 조회 실패 시 (테이블 미생성 등) 사유
 };
 
+// ── 유니버스 목록 편집 (/etf/manage) ──────────────────────────
+
+export const DIVIDEND_FREQS = ["월", "분기", "반기", "연"] as const;
+export const US_TICKER_RE = /^[A-Z][-.A-Z0-9]{0,9}$/;
+
+/** 편집기/API 가 주고받는 메타 입력. 빈 문자열은 null 로 정규화된다. */
+export type EtfMetaInput = {
+  name: string | null;
+  category: string | null;
+  label: string | null;
+  issuer: string | null;
+  expenseRatio: number | null;   // 소수 (0.0009 = 0.09%)
+  dividendFreq: string | null;
+  description: string | null;
+};
+
+/** 편집기 목록 행 (숨김·대기열 상태 포함). */
+export type EtfUniverseRow = {
+  ticker: string;
+  name: string;
+  category: string | null;
+  label: string | null;
+  issuer: string | null;
+  expenseRatio: number | null;
+  dividendFreq: string | null;
+  description: string | null;
+  sortOrder: number | null;
+  hidden: boolean;
+  priceRows: number;            // daily_prices 행 수 (0 = 아직 수집 전)
+  lastDate: string | null;      // 최신 종가 날짜
+  pendingStatus: string | null; // 'pending' | 'processing' | 'error' | null
+  pendingError: string | null;
+};
+
+const LIMITS = { name: 100, category: 20, label: 50, issuer: 50, description: 500 } as const;
+
+function cleanStr(v: unknown, max: number): string | null {
+  if (v === null || v === undefined) return null;
+  const s = String(v).replace(/\s+/g, " ").trim();
+  return s ? s.slice(0, max) : null;
+}
+
+/**
+ * 메타 입력 정규화 + 검증. expenseRatio 는 소수(0.0009) 또는 "0.09%" / "0.09"(= %) 문자열을 받는다.
+ */
+export function parseEtfMetaInput(
+  body: unknown
+): { ok: true; value: EtfMetaInput } | { ok: false; error: string } {
+  const b = (body ?? {}) as Record<string, unknown>;
+
+  let expenseRatio: number | null = null;
+  const raw = b.expenseRatio;
+  if (raw !== null && raw !== undefined && String(raw).trim() !== "") {
+    let n: number;
+    if (typeof raw === "number") {
+      n = raw;
+    } else {
+      const s = String(raw).trim();
+      const pct = s.endsWith("%");
+      n = Number(s.replace("%", ""));
+      // 문자열은 % 로 해석 (0.09 → 0.0009). 소수 형태로 보내려면 number 로.
+      if (Number.isFinite(n)) n = pct || n >= 0.02 ? n / 100 : n;
+    }
+    if (!Number.isFinite(n) || n < 0 || n > 0.1) {
+      return { ok: false, error: "수수료는 0 ~ 10% 사이의 값이어야 합니다 (예: 0.09)." };
+    }
+    expenseRatio = n;
+  }
+
+  const dividendFreq = cleanStr(b.dividendFreq, 10);
+  if (dividendFreq && !(DIVIDEND_FREQS as readonly string[]).includes(dividendFreq)) {
+    return { ok: false, error: `배당기준은 ${DIVIDEND_FREQS.join("/")} 중 하나여야 합니다.` };
+  }
+
+  return {
+    ok: true,
+    value: {
+      name: cleanStr(b.name, LIMITS.name),
+      category: cleanStr(b.category, LIMITS.category),
+      label: cleanStr(b.label, LIMITS.label),
+      issuer: cleanStr(b.issuer, LIMITS.issuer),
+      expenseRatio,
+      dividendFreq,
+      description: cleanStr(b.description, LIMITS.description),
+    },
+  };
+}
+
+export function normalizeUsTicker(raw: unknown): string | null {
+  const t = String(raw ?? "").trim().toUpperCase();
+  return US_TICKER_RE.test(t) ? t : null;
+}
+
 // ── 매크로 환경 ────────────────────────────────────────────────
 
 export const MACRO_DEFS = [

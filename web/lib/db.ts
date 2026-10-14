@@ -39,6 +39,8 @@ export function getPgPool(): Pool {
 // ── SQLite (로컬 개발 전용) ────────────────────────────────────
 // 프로덕션 Vercel에서는 이 함수가 호출되지 않도록 backend 분기로 보호됨.
 // node:sqlite 는 Node 24+ 에서 stable. Node 22 런타임에서는 require 자체가 실패할 수 있음.
+// 종목 추가 큐·ETF 목록 편집기 같은 쓰기 기능을 로컬에서도 시험할 수 있도록 읽기/쓰기로 연다
+// (WAL 모드라 Python 파이프라인과 동시 접근해도 서로 막지 않는다).
 export function getSqliteDb(): unknown {
   if (!globalThis.__stockcycle_sqlite__) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -46,7 +48,7 @@ export function getSqliteDb(): unknown {
     const p =
       process.env.STOCKCYCLE_SQLITE_PATH ??
       path.resolve(process.cwd(), "..", "poc", "stock.db");
-    globalThis.__stockcycle_sqlite__ = new mod.DatabaseSync(p, { readOnly: true });
+    globalThis.__stockcycle_sqlite__ = new mod.DatabaseSync(p, { readOnly: false });
   }
   return globalThis.__stockcycle_sqlite__;
 }

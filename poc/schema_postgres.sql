@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS etf_meta (
     dividend_freq TEXT,               -- '월' | '분기' | '반기' | '연'
     description TEXT,
     sort_order  INTEGER,
+    hidden      INTEGER NOT NULL DEFAULT 0,  -- 1 이면 ETF 트렌드 집계에서 제외 (목록 편집기의 '숨김')
     updated_at  TEXT NOT NULL,
     FOREIGN KEY (ticker) REFERENCES tickers(ticker)
 );
