@@ -83,7 +83,7 @@ npm run dev
     `components/EtfTrend.tsx`
 - **ETF 목록 편집 `/etf/manage`** — 유니버스 ETF 추가·수정(이름/분류/라벨/운용사/수수료/배당/설명)·
   숨김/복구·완전 삭제. 읽기는 공개, 쓰기는 `ADMIN_SECRET`(없으면 `REVALIDATE_SECRET`) 키를
-  `Authorization: Bearer` 로 보내야 한다. 키는 브라우저 localStorage 에만 저장.
+  `Authorization: Bearer <URL 인코딩한 키>` 로 보내야 한다 (한글 키 가능, 서버가 디코딩). 키는 브라우저 localStorage 에만 저장.
   - API: `GET/POST /api/etf/universe`, `PUT/PATCH/DELETE /api/etf/universe/[ticker]`,
     `POST /api/admin/verify`
   - 숨김 = `etf_meta.hidden=1` → `/etf` 집계에서만 제외(수집·홈 표시 유지). 삭제 = 가격·메타·대기열·티커 제거.

@@ -264,8 +264,8 @@ export default function EtfManager({ initial, secretConfigured, loadError }: Pro
         </div>
         <p className="text-[11px] text-gray-500">
           키는 Vercel 환경변수 <code className="text-gray-300">ADMIN_SECRET</code>(없으면{" "}
-          <code className="text-gray-300">REVALIDATE_SECRET</code>)과 같아야 합니다. 브라우저
-          로컬 저장소에만 보관되고 요청 헤더로만 전송됩니다.
+          <code className="text-gray-300">REVALIDATE_SECRET</code>)과 같아야 합니다. 한글 키도
+          됩니다. 브라우저 로컬 저장소에만 보관되고 요청 헤더로만 전송됩니다.
         </p>
       </section>
 
