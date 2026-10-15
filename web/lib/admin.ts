@@ -45,7 +45,7 @@ export function checkAdmin(req: Request): AdminCheck {
     return {
       ok: false,
       status: 500,
-      error: "서버에 ADMIN_SECRET(또는 REVALIDATE_SECRET) 환경변수가 설정되지 않았습니다.",
+      error: "서버에 ADMIN_SECRET(또는 REVALIDATE_SECRET) 환경변수가 설정되지 않았습니다. Vercel 에서 추가·변경한 뒤에는 해당 환경(Production/Preview)을 Redeploy 해야 반영됩니다.",
     };
   }
   const auth = req.headers.get("authorization") ?? "";

@@ -119,6 +119,13 @@ export default function AdminKeyPanel({ admin }: { admin: AdminKey }) {
         )}
         <KeyBadge state={keyState} />
       </div>
+      {keyState === "server" && (
+        <p className="text-[11px] text-red-300/90">
+          이 배포에는 <code>ADMIN_SECRET</code> 이 없습니다. Vercel 환경변수는 배포 시점에 굳어지므로, 지금 보고 있는
+          환경(운영이면 Production, 브랜치 프리뷰면 Preview)에 값을 넣은 뒤 그 배포를 <strong>Redeploy</strong> 해야
+          합니다. Preview 변수에 특정 브랜치를 지정했다면 이 브랜치 이름과 같은지도 확인하세요.
+        </p>
+      )}
       <p className="text-[11px] text-gray-500">
         키는 Vercel 환경변수 <code className="text-gray-300">ADMIN_SECRET</code>(없으면{" "}
         <code className="text-gray-300">REVALIDATE_SECRET</code>)과 같아야 합니다. 비밀번호 칸이라 한글은
