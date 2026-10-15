@@ -11,8 +11,9 @@ export default async function EtfManagePage() {
 
   return (
     <div className="space-y-6">
-      <nav className="text-xs text-gray-400">
+      <nav className="text-xs text-gray-400 flex items-center gap-3">
         <Link href="/etf" className="hover:text-white">← ETF 트렌드</Link>
+        <Link href="/brands/manage" className="hover:text-white">브랜드 설정 (접속 주소별 로고·사진)</Link>
       </nav>
       <section>
         <h1 className="text-2xl font-bold mb-1">ETF 목록 편집</h1>

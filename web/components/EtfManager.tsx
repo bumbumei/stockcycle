@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { adminHeaders, readAdminKey, writeAdminKey } from "@/lib/adminKey";
+import AdminKeyPanel, { useAdminKey } from "@/components/AdminKeyPanel";
 import { DIVIDEND_FREQS, ETF_CATEGORY_ORDER, EtfUniverseRow } from "@/lib/etf";
 
 type Props = {
@@ -21,8 +21,6 @@ type Draft = {
   dividendFreq: string;
   description: string;
 };
-
-type KeyState = "none" | "checking" | "ok" | "bad" | "server";
 
 const EMPTY_DRAFT: Draft = {
   ticker: "",
@@ -71,8 +69,8 @@ function statusOf(r: EtfUniverseRow): { label: string; cls: string; title?: stri
 
 export default function EtfManager({ initial, secretConfigured, loadError }: Props) {
   const [rows, setRows] = useState<EtfUniverseRow[]>(initial);
-  const [key, setKey] = useState("");
-  const [keyState, setKeyState] = useState<KeyState>(secretConfigured ? "none" : "server");
+  const admin = useAdminKey(secretConfigured);
+  const { keyState, setKeyState } = admin;
   const [message, setMessage] = useState<{ kind: "ok" | "err" | "info"; text: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null); // 작업 중인 티커 또는 'add'
   const [editing, setEditing] = useState<Draft | null>(null);
@@ -90,35 +88,6 @@ export default function EtfManager({ initial, secretConfigured, loadError }: Pro
       ...Array.from(present).filter((c) => !ETF_CATEGORY_ORDER.includes(c)).sort(),
     ];
   }, [rows]);
-
-  const verify = useCallback(async (k: string): Promise<boolean> => {
-    if (!k) {
-      setKeyState("none");
-      return false;
-    }
-    setKeyState("checking");
-    try {
-      const r = await fetch("/api/admin/verify", { method: "POST", headers: adminHeaders(k) });
-      if (r.ok) {
-        setKeyState("ok");
-        writeAdminKey(k);
-        return true;
-      }
-      setKeyState(r.status === 500 ? "server" : "bad");
-      return false;
-    } catch {
-      setKeyState("bad");
-      return false;
-    }
-  }, []);
-
-  useEffect(() => {
-    const saved = readAdminKey();
-    if (saved) {
-      setKey(saved);
-      void verify(saved);
-    }
-  }, [verify]);
 
   const refresh = useCallback(async () => {
     try {
@@ -139,7 +108,7 @@ export default function EtfManager({ initial, secretConfigured, loadError }: Pro
     setBusy(label);
     setMessage(null);
     try {
-      const r = await fetch(url, { ...init, headers: adminHeaders(key) });
+      const r = await fetch(url, { ...init, headers: admin.headers() });
       const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
       if (!r.ok) {
         if (r.status === 401) setKeyState("bad");
@@ -224,50 +193,7 @@ export default function EtfManager({ initial, secretConfigured, loadError }: Pro
 
   return (
     <div className="space-y-5">
-      {/* 관리자 키 */}
-      <section className="bg-gray-900 border border-gray-800 rounded p-3 space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="text-xs text-gray-400 shrink-0">관리자 키</label>
-          <input
-            type="password"
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void verify(key);
-            }}
-            placeholder="ADMIN_SECRET 값"
-            autoComplete="off"
-            className="flex-1 min-w-[12rem] bg-gray-950 border border-gray-800 rounded px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gray-600"
-          />
-          <button
-            type="button"
-            onClick={() => void verify(key)}
-            disabled={keyState === "checking" || !key}
-            className="text-xs px-3 py-1.5 rounded bg-amber-500 text-gray-900 font-semibold disabled:opacity-40 hover:bg-amber-400 transition"
-          >
-            {keyState === "checking" ? "확인 중..." : "확인 · 이 브라우저에 저장"}
-          </button>
-          {keyState === "ok" && (
-            <button
-              type="button"
-              onClick={() => {
-                writeAdminKey("");
-                setKey("");
-                setKeyState("none");
-              }}
-              className="text-xs px-2 py-1.5 rounded border border-gray-700 text-gray-400 hover:text-white"
-            >
-              키 지우기
-            </button>
-          )}
-          <KeyBadge state={keyState} />
-        </div>
-        <p className="text-[11px] text-gray-500">
-          키는 Vercel 환경변수 <code className="text-gray-300">ADMIN_SECRET</code>(없으면{" "}
-          <code className="text-gray-300">REVALIDATE_SECRET</code>)과 같아야 합니다. 한글 키도
-          됩니다. 브라우저 로컬 저장소에만 보관되고 요청 헤더로만 전송됩니다.
-        </p>
-      </section>
+      <AdminKeyPanel admin={admin} />
 
       {loadError && (
         <div className="text-sm rounded px-3 py-2 bg-red-500/10 border border-red-600/60 text-red-300 break-words">
@@ -435,18 +361,6 @@ export default function EtfManager({ initial, secretConfigured, loadError }: Pro
       </p>
     </div>
   );
-}
-
-function KeyBadge({ state }: { state: KeyState }) {
-  const map: Record<KeyState, { text: string; cls: string }> = {
-    none: { text: "읽기 전용", cls: "text-gray-400 border-gray-700" },
-    checking: { text: "확인 중", cls: "text-gray-300 border-gray-600" },
-    ok: { text: "편집 가능", cls: "text-green-300 border-green-700/60 bg-green-500/10" },
-    bad: { text: "키 불일치", cls: "text-red-300 border-red-700/60 bg-red-500/10" },
-    server: { text: "서버에 키 미설정", cls: "text-red-300 border-red-700/60 bg-red-500/10" },
-  };
-  const m = map[state];
-  return <span className={`text-[11px] px-2 py-0.5 rounded-full border ${m.cls}`}>{m.text}</span>;
 }
 
 function RowView({
