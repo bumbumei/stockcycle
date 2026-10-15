@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import BrandBar from "@/components/BrandBar";
 import NavTabs from "@/components/NavTabs";
 import "./globals.css";
 
@@ -16,6 +17,8 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <body className="min-h-screen">
+        {/* ?brand=<slug> 로 들어온 접속에만 보이는 회사 로고·담당자 띠 (브라우저에서만 동작) */}
+        <BrandBar />
         <header className="border-b border-gray-800 bg-gray-900/60 backdrop-blur">
           <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 flex-wrap">

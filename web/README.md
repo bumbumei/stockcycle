@@ -98,6 +98,18 @@ npm run dev
   - `GET /api/stocks/005930/monthly` — 월별 집계 + 원시 수익률
   - `GET /api/etf/trend` — 미국 ETF 기간별 수익률 (`/etf` 페이지와 동일 데이터)
 
+### 접속 주소별 브랜드 (회사 로고 · 담당자 사진)
+
+- `/brands/manage` — 관리자 키로 브랜드 추가·수정·삭제. 회사명·담당자·직함·전화·이메일·한 줄 문구와
+  로고·사진(각 600KB 이하, 브라우저에서 자동 축소)을 등록하면 공유 주소가 생긴다.
+- 공유 주소 `/etf?brand=<slug>` 또는 짧게 `/b/<slug>`. 그 주소로 들어온 브라우저는 모든 페이지 맨 위에
+  그 회사의 로고·담당자 띠(`components/BrandBar.tsx`)를 보고, 이후 페이지 이동에도 유지된다
+  (localStorage `stockcycle.brand.v1`). `?brand=off` 로 해제.
+- 띠는 클라이언트 컴포넌트가 `/api/brands/<slug>` 를 불러 그리므로 ISR 페이지(/etf, /stocks/*)는 계속
+  정적 캐시로 서빙된다. 이미지는 DB `brands` 테이블에 base64 로 저장되고
+  `/api/brands/<slug>/logo|photo?v=<updated_at>` 로 길게 캐시된다.
+- `brands` 테이블은 웹이 처음 쓸 때 `CREATE TABLE IF NOT EXISTS` 로 만들므로 별도 마이그레이션이 필요 없다.
+
 ## 핵심 결정
 
 | 결정 | 이유 |

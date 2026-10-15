@@ -86,6 +86,7 @@ gh repo create stockcycle --public --source=. --push
 - `/stocks/005930` — 히트맵 렌더링
 - `/etf` — 미국 ETF 트렌드 (Actions 에서 `seed-etf-us` 1회 실행 후 데이터 표시)
 - `/etf/manage` — ETF 목록 편집 (관리자 키 입력 후 추가·수정·숨김·삭제)
+- `/brands/manage` — 접속 주소별 브랜드(회사 로고·담당자 사진) 등록 → `/b/<slug>` 공유 주소
 - `/api/tickers` — JSON 응답
 
 ## 3. GitHub Actions 일일 자동 수집

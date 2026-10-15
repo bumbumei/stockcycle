@@ -92,6 +92,26 @@ CREATE TABLE IF NOT EXISTS ingestion_log (
     error_msg   TEXT,
     created_at  TEXT    NOT NULL
 );
+
+-- 접속 주소별 브랜드 (회사 로고 · 담당자 사진). 웹의 /brands/manage 에서 관리.
+-- 웹 쪽도 처음 쓸 때 CREATE TABLE IF NOT EXISTS 로 만들어 두므로 양쪽 정의를 같게 유지할 것.
+CREATE TABLE IF NOT EXISTS brands (
+    slug        TEXT PRIMARY KEY,          -- ?brand=<slug> / /b/<slug>
+    company     TEXT NOT NULL,
+    person      TEXT,
+    title       TEXT,
+    phone       TEXT,
+    email       TEXT,
+    tagline     TEXT,
+    logo_type   TEXT,                      -- image/png 등
+    logo_data   TEXT,                      -- base64
+    photo_type  TEXT,
+    photo_data  TEXT,
+    logo_plate  INTEGER NOT NULL DEFAULT 1, -- 1 이면 로고 뒤에 흰 배경판
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT    NOT NULL,
+    updated_at  TEXT    NOT NULL
+);
 """
 
 

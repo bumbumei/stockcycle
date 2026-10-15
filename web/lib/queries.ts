@@ -21,6 +21,14 @@ import {
   emptyPeriodMap,
 } from "./etf";
 import type { DailyBar } from "./stock";
+import {
+  BrandAdminRow,
+  BrandFields,
+  BrandImageKind,
+  BrandImagePayload,
+  BrandPublic,
+  brandImageUrl,
+} from "./brand";
 
 /**
  * 양쪽 백엔드가 공유하는 SQL.
@@ -1055,4 +1063,193 @@ export async function dailyCloses(
     [ticker, from]
   );
   return rows.map((r) => ({ date: String(r.date), close: Number(r.close) }));
+}
+
+// ── 브랜드 (접속 주소별 회사 로고 · 담당자 사진) ────────────────
+// 테이블은 웹 쪽에서 처음 쓸 때 만들어 두므로 (CREATE TABLE IF NOT EXISTS) 파이프라인을
+// 먼저 돌리지 않아도 된다. poc/db.py · schema_postgres.sql 에도 같은 정의가 있다.
+
+const BRANDS_DDL = `CREATE TABLE IF NOT EXISTS brands (
+  slug        TEXT PRIMARY KEY,
+  company     TEXT NOT NULL,
+  person      TEXT,
+  title       TEXT,
+  phone       TEXT,
+  email       TEXT,
+  tagline     TEXT,
+  logo_type   TEXT,
+  logo_data   TEXT,
+  photo_type  TEXT,
+  photo_data  TEXT,
+  logo_plate  INTEGER NOT NULL DEFAULT 1,
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+)`;
+
+let brandsTableReady: Promise<void> | undefined;
+async function ensureBrandsTable(): Promise<void> {
+  if (!brandsTableReady) {
+    brandsTableReady = runWrite(BRANDS_DDL)
+      .then(() => undefined)
+      .catch((e) => {
+        brandsTableReady = undefined;
+        throw e;
+      });
+  }
+  return brandsTableReady;
+}
+
+type BrandDbRow = {
+  slug: string;
+  company: string;
+  person: string | null;
+  title: string | null;
+  phone: string | null;
+  email: string | null;
+  tagline: string | null;
+  logo_plate: number;
+  enabled: number;
+  created_at: string;
+  updated_at: string;
+  has_logo: number;
+  has_photo: number;
+  logo_len: number;
+  photo_len: number;
+};
+
+// 이미지 본문은 빼고 "있는지"와 크기만 가져온다 (목록·공개 API 가 가벼워야 하므로).
+const BRAND_COLS = `slug, company, person, title, phone, email, tagline, logo_plate, enabled, created_at, updated_at,
+  CASE WHEN logo_data IS NULL THEN 0 ELSE 1 END AS has_logo,
+  CASE WHEN photo_data IS NULL THEN 0 ELSE 1 END AS has_photo,
+  COALESCE(LENGTH(logo_data), 0) AS logo_len,
+  COALESCE(LENGTH(photo_data), 0) AS photo_len`;
+
+function brandFromRow(r: BrandDbRow): BrandAdminRow {
+  const hasLogo = Number(r.has_logo) === 1;
+  const hasPhoto = Number(r.has_photo) === 1;
+  return {
+    slug: r.slug,
+    company: r.company,
+    person: r.person ?? null,
+    title: r.title ?? null,
+    phone: r.phone ?? null,
+    email: r.email ?? null,
+    tagline: r.tagline ?? null,
+    logoPlate: Number(r.logo_plate) === 1,
+    enabled: Number(r.enabled) === 1,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    logoUrl: hasLogo ? brandImageUrl(r.slug, "logo", r.updated_at) : null,
+    photoUrl: hasPhoto ? brandImageUrl(r.slug, "photo", r.updated_at) : null,
+    logoBytes: Math.round((Number(r.logo_len) * 3) / 4),
+    photoBytes: Math.round((Number(r.photo_len) * 3) / 4),
+  };
+}
+
+export function brandToPublic(b: BrandAdminRow): BrandPublic {
+  return {
+    slug: b.slug,
+    company: b.company,
+    person: b.person,
+    title: b.title,
+    phone: b.phone,
+    email: b.email,
+    tagline: b.tagline,
+    logoPlate: b.logoPlate,
+    logoUrl: b.logoUrl,
+    photoUrl: b.photoUrl,
+    updatedAt: b.updatedAt,
+  };
+}
+
+/** 편집기용 전체 목록 (사용 안 함 포함). */
+export async function listBrands(): Promise<BrandAdminRow[]> {
+  await ensureBrandsTable();
+  const rows = await selectAll<BrandDbRow>(`SELECT ${BRAND_COLS} FROM brands ORDER BY company, slug`);
+  return rows.map(brandFromRow);
+}
+
+export async function getBrand(slug: string): Promise<BrandAdminRow | undefined> {
+  await ensureBrandsTable();
+  const r = await selectOne<BrandDbRow>(`SELECT ${BRAND_COLS} FROM brands WHERE slug = ?`, [slug]);
+  return r ? brandFromRow(r) : undefined;
+}
+
+/** 공개 조회 — 사용 중인 브랜드만. */
+export async function getBrandPublic(slug: string): Promise<BrandPublic | undefined> {
+  const b = await getBrand(slug);
+  return b && b.enabled ? brandToPublic(b) : undefined;
+}
+
+export async function getBrandImage(
+  slug: string,
+  kind: BrandImageKind
+): Promise<BrandImagePayload | undefined> {
+  await ensureBrandsTable();
+  const col = kind === "logo" ? "logo" : "photo";
+  const r = await selectOne<{ type: string | null; data: string | null }>(
+    `SELECT ${col}_type AS type, ${col}_data AS data FROM brands WHERE slug = ? AND enabled = 1`,
+    [slug]
+  );
+  return r && r.type && r.data ? { type: r.type, base64: r.data } : undefined;
+}
+
+/** 생성. 이미 있으면 false. */
+export async function createBrand(
+  f: BrandFields,
+  logo: BrandImagePayload | null | undefined,
+  photo: BrandImagePayload | null | undefined
+): Promise<boolean> {
+  await ensureBrandsTable();
+  const exists = await selectOne<{ slug: string }>("SELECT slug FROM brands WHERE slug = ?", [f.slug]);
+  if (exists) return false;
+  const now = new Date().toISOString();
+  await runWrite(
+    `INSERT INTO brands (slug, company, person, title, phone, email, tagline,
+       logo_type, logo_data, photo_type, photo_data, logo_plate, enabled, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      f.slug, f.company, f.person, f.title, f.phone, f.email, f.tagline,
+      logo?.type ?? null, logo?.base64 ?? null, photo?.type ?? null, photo?.base64 ?? null,
+      f.logoPlate ? 1 : 0, f.enabled ? 1 : 0, now, now,
+    ]
+  );
+  return true;
+}
+
+/**
+ * 수정. 이미지는 undefined=유지, null=삭제, payload=교체. 없는 slug 면 false.
+ */
+export async function updateBrand(
+  f: BrandFields,
+  logo: BrandImagePayload | null | undefined,
+  photo: BrandImagePayload | null | undefined
+): Promise<boolean> {
+  await ensureBrandsTable();
+  const sets: string[] = [
+    "company = ?", "person = ?", "title = ?", "phone = ?", "email = ?", "tagline = ?",
+    "logo_plate = ?", "enabled = ?", "updated_at = ?",
+  ];
+  const params: unknown[] = [
+    f.company, f.person, f.title, f.phone, f.email, f.tagline,
+    f.logoPlate ? 1 : 0, f.enabled ? 1 : 0, new Date().toISOString(),
+  ];
+  if (logo !== undefined) {
+    sets.push("logo_type = ?", "logo_data = ?");
+    params.push(logo?.type ?? null, logo?.base64 ?? null);
+  }
+  if (photo !== undefined) {
+    sets.push("photo_type = ?", "photo_data = ?");
+    params.push(photo?.type ?? null, photo?.base64 ?? null);
+  }
+  params.push(f.slug);
+  const n = await runWrite(`UPDATE brands SET ${sets.join(", ")} WHERE slug = ?`, params);
+  return n > 0;
+}
+
+export async function deleteBrand(slug: string): Promise<boolean> {
+  await ensureBrandsTable();
+  const n = await runWrite("DELETE FROM brands WHERE slug = ?", [slug]);
+  return n > 0;
 }
